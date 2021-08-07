@@ -11,6 +11,7 @@ else:
 
 type
   Dataset* = pointer
+  Band* = pointer
   Layer* = pointer
   Feature* = pointer
   FeatureDefn* = pointer
@@ -140,6 +141,49 @@ type GDALRPCInfoV2* {.importc: "GDALRPCInfoV2", header: "gdal.h".} = object
   dfERR_BIAS*: cdouble
   dfERR_RAND*: cdouble
 
+type GDALRWFlag* {.size: sizeof(cint).} = enum
+  GF_Read = 0
+  GF_Write = 1
+
+type GDALDataType* {.size: sizeof(cint).} = enum
+  GDT_Unknown = 0
+  GDT_Byte = 1
+  GDT_UInt16 = 2
+  GDT_Int16 = 3
+  GDT_UInt32 = 4
+  GDT_Int32 = 5
+  GDT_Float32 = 6
+  GDT_Float64 = 7
+  GDT_CInt16 = 8
+  GDT_CInt32 = 9
+  GDT_CFloat32 = 10
+  GDT_CFloat64 = 11
+  GDT_TypeCount = 12
+
+type GDALRIOResampleAlg*  {.size: sizeof(cint).} = enum
+  GRIORA_NearestNeighbour = 0
+  GRIORA_Bilinear = 1
+  GRIORA_Cubic = 2
+  GRIORA_CubicSpline = 3
+  GRIORA_Lanczos = 4
+  GRIORA_Average = 5
+  GRIORA_Mode = 6
+  GRIORA_Gauss = 7
+  GRIORA_RMS = 14
+
+type GDALProgressFunc* =
+    proc (dfComplete: cdouble, pszMessage: cstring, pProgressArg: pointer): cint {.cdecl.}
+
+type GDALRasterIOExtraArg* = object
+  nVersion*: cint
+  eResampleArg*: GDALRIOResampleAlg
+  pfnProgress*: GDALProgressFunc
+  pProgressData*: pointer
+  bFloatingPointWindowValidity: cint
+  dfXOff: cdouble
+  dfYOff: cdouble
+  dfXSize: cdouble
+  dfYSize: cdouble
 
 const
   OF_ALL*       = 0x00  ## Allow all types of drivers to be used    
@@ -337,7 +381,26 @@ proc getGCPs*(hDS: Dataset): ptr GDAL_GCP {.cdecl, dynlib: libgdal, importc: "GD
 
 proc GDALGetMetadata*(hDS: Dataset, pszDomain: cstring): ptr cstring {.cdecl, dynlib: libgdal, importc: "GDALGetMetadata".}
 
+proc GDALGetRasterBand*(hDS: Dataset, nBandId: cint) : Band {.cdecl, dynlib: libgdal, importc: "GDALGetRasterBand".}
+
+proc GDALGetDataTypeSizeBits*(eDataType: GDALDataType) : cint {.cdecl, dynlib: libgdal, importc: "GDALGetDataTypeSizeBits".}
+
 proc GDALExtractRPCInfoV2*(papszMd: ptr cstring, psRPC: ptr GDALRPCInfoV2): cint {.cdecl, dynlib: libgdal, importc: "GDALExtractRPCInfoV2".}
+
+proc GDALFindDataType* (nBits: cint, bSigned: cint, bFloating: cint, bComplex: cint): GDALDataType {.cdecl, dynlib: libgdal, importc: "GDALFindDataType".}
+
+proc GDALDataTypeUnion*(eType1: GDALDataType, eType2: GDALDataType) : GDALDataType {.cdecl, dynlib: libgdal, importc: "GDALDataTypeUnion".}
+
+proc GDALDatasetRasterIOEx*(hDS: Dataset, eRWFlag: GDALRWFlag, nXOff: cint, nYOff: cint,
+                            nXSize: cint, nYSize: cint, pData: pointer, 
+                            nBufXSize: cint, nBufYSize: cint, 
+                            eBufType: GDALDataType, nBandCount: cint, 
+                            panBandMap: ptr cint,
+                            nPixelSpace: int64, nLineSpace: int64, nBandSpace: int64,
+                            psExtraArg: ptr GDALRasterIOExtraArg ) : cint
+                            {.cdecl, dynlib: libgdal, importc: "GDALDatasetRasterIOEx".}
+
+proc GDALGetDataTypeName*(eDataType: GDALDataType) : cstring {.cdecl, dynlib: libgdal, importc: "GDALGetDataTypeName".}
 
 proc open*(pszFilename: cstring, nOpenFlags: int32, papszAllowedDrivers: cstring, papszOpenOptions: cstring, papszSiblingFiles: cstring): Dataset {.cdecl, dynlib: libgdal, importc: "GDALOpenEx".}
   ## Open a raster or vector file as a Dataset.
@@ -350,6 +413,8 @@ proc getLayerCount*(hDS: Dataset): int32 {.cdecl, dynlib: libgdal, importc: "GDA
 
 proc getLayer*(hDS: Dataset, iLayer: int32): Layer {.cdecl, dynlib: libgdal, importc: "GDALDatasetGetLayer".}
   ## Fetch a layer by index.
+
+proc GDALGetRasterDataType*(hBand: Band) : GDALDataType {.cdecl, dynlib: libgdal, importc: "GDALGetRasterDataType".}
 
 proc getRasterXSize*(hDS: Dataset): cint {.cdecl, dynlib: libgdal, importc: "GDALGetRasterXSize".}
 

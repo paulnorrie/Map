@@ -6,7 +6,14 @@
         {
             "label": "build",
             "type": "shell",
-            "command": "nim c -d:debug --debugger:native src/Map.nim"
+            // on OSX static linking is not supported using "-static" so instead use "-framework"
+            // to find what libraries are needed otool -L <libgdal.dylib> and all it's dependancies
+            // from macos Big Sur onwards /usr/lib/libSystem.B and other /usr/lib files are in a dynamic cache so use -lz -lc++ etc (if using clang since)
+            // https://developer.apple.com/documentation/macos-release-notes/macos-big-sur-11_0_1-release-notes 
+            // https://developer.apple.com/forums/thread/655588?answerId=665804022#665804022
+            
+           // "command": "nim c -d:debug --debugger:native --dynlibOverride:libgdal --passL:\"-framework OpenCL /usr/local/lib/libgdal.a /usr/local/opt/openssl@1.1/lib/libcrypto.a /usr/local/opt/poppler-qt5/lib/libpoppler.a /usr/local/opt/json-c/lib/libjson-c.a /usr/local/opt/freexl/lib/libfreexl.a /usr/local/opt/geos/lib/libgeos.a /usr/local/opt/geos/lib/libgeos_c.a /usr/local/opt/webp/lib/libwebp.a /usr/local/opt/unixodbc/lib/libodbc.a /usr/local/opt/unixodbc/lib/libodbcinst.a /usr/local/opt/expat/lib/libexpat.a /usr/local/opt/xerces-c/lib/libxerces-c.a /usr/local/opt/openjpeg/lib/libopenjp2.a /usr/local/opt/netcdf/lib/libnetcdf.a /usr/local/opt/hdf5/lib/libhdf5.a /usr/local/opt/giflib/lib/libgif.a /usr/local/opt/libgeotiff/lib/libgeotiff.a /usr/local/opt/libpng/lib/libpng16.a /usr/local/opt/cfitsio/lib/libcfitsio.a /usr/local/opt/libpq/lib/libpq.a /usr/local/opt/zstd/lib/libzstd.a /usr/local/opt/xz/lib/liblzma.a /usr/local/opt/proj@7/lib/libproj.a /usr/local/opt/sqlite/lib/libsqlite3.a /usr/local/opt/libtiff/lib/libtiff.a /usr/local/opt/jpeg/lib/libjpeg.a /usr/local/opt/libspatialite/lib/libspatialite.a /usr/local/opt/libdap/lib/libdap.a /usr/local/opt/libdap/lib/libdapserver.a /usr/local/opt/libdap/lib/libdapclient.a /usr/local/opt/pcre/lib/libpcre.a /usr/local/opt/libxml2/lib/libxml2.a /usr/local/opt/freetype/lib/libfreetype.a /usr/local/opt/fontconfig/lib/libfontconfig.a /usr/local/opt/nss/lib/libnss.a /usr/local/opt/nss/lib/libnssutil.a /usr/local/opt/nss/lib/libsmime.a  /usr/local/opt/nspr/lib/libplds4.a /usr/local/opt/nspr/lib/libplc4.a /usr/local/opt/nspr/lib/libnspr4.a /usr/local/opt/little-cms2/lib/liblcms2.a  -lSystem -lz -lbz2 -lcurl -liconv -lc++ -lssl3 -lnss3 -lnspr4\" src/Map.nim"
+           "command": "nim c -d:debug --debugger:native geomap.nim"
         }
     ]
 }

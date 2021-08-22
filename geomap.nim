@@ -1,80 +1,12 @@
-## Map
-## ===
+## GeoMap
+## ======
 ## 
 ## Opening Geospatial Data
 ## -----------------------
 ## You must first ``#open`` the data (e.g. the file or database) you
-## will work with.  
-## 
-## You can then ``#read`` the raster data or vector data.
-## 
-## Types of Geospatial Data
-## ------------------------
-## Raster: e.g. a satellite image, a Digital Elevation Model, a radar map
-## Common raster formats are GeoTIFF and JPEG2000
-## 
-## Vector: e.g. a shape of country boundaries, points of interest in a city.
-## Common vector formats are GeoJSON files, Google Earth KML files, and
-## ESRI Shapefiles (a directory of .shp, .shx, .dbf).
-## 
-##
-## 
-## Where in the world are we?  Coordinate Reference Systems
-## --------------------------------------------------------
-## Each Map references somewhere in the world.  There are different ways
-## of specifying this.  Latitude and Longitude are very common.
-## 
-## Converting between raster and geospatial coordinates
-## ----------------------------------------------------
-## Maps with rasters have two coordinate systems: one to identify the pixel
-## on the raster and the other to identify where in the world a point on the
-## map is.
-## 
-## For example, the upper-left pixel of a raster has x coordinate of 0 and
-## y coordinate of 0.  That pixel may be located on the world at 36.9°S and
-## 174.8°E.
-## 
-## The naming convention `x`,`y` is used for raster coordinates
-## and `e` (for easting), `n` (for northing) are used
-## for world coordinates.  This allows us to easily specify both coordinates
-## in the same scope.
-## 
-## You can convert world coordinates to raster coordinates this way:
-## ``
-## var map = read("picture.tif")
-## let (x, y) = map.worldToPixel(-36.9, 174.8)
-## ``
-## This example uses latitude and longitude world coordinates.  You must
-## pass world coordinates in the same Coordinate Reference System the raster
-## uses.  If the image above used UTM60 as a Coordinate Reference System then
-## you would get an incorrect x,y value if you passed in latitude, longitude.
-## 
-## Reading very large rasters: trading performance for memory
-## --------------------------
-## Some images can be very large, multiple GB's.  These are not loaded in 
-## memory all at one time.  Large images are worked in blocks (if the 
-## driver supports it).  If you write to the raster, it may write to storage
-## as you go (if the driver supports it and it has been opened with those
-## permissions).
-## 
-## Reading vector shapes
-## ---------------------
-## Vector shapes often define boundaries, such as property, or markers, like
-## survey points.  For example, you can read a KML file created on Google Earth
-## that identifies points of interest in a city and the city boundaries.
-## 
-## Vectors are arranged in one or more Layers.  Each Layer has one or more
-## Features.  Each Feature has one or more Geometries (such as a polygon, or a
-## point), and some attributes (describing the Feature, e.g. "My House").
-## 
-## To read vectors, once you've opened a Map, you can iterate through all
-## the vector data:
-## ``
-## for layer in map.layers:
-##   for feature in layer.features:
-##     for geometry in feature.geometries
-##       echo geometry
-## ``
+## will work with.  This does not read the contents of the file, which means
+## if it's a raster you can get information about it or use its geospatial
+## reference data without loading the raster into memory.
 ## 
 ## Making masks of areas of interest on a Raster
 ## ---------------------------------------------
@@ -141,9 +73,10 @@
 ## to support it along with AddBand() and RemoveBand().  As soon as we do 
 ## in-place writes, we may need to create a new dataset and destroy the old one
 ##
-## ``
-import gdal/gdal, gdal/cpl, gdal/gdal_alg
-#import shape
+## TODO: Reading large rasters one chunk at a time, process them, then read
+## next chunk, process it, etc (probably do this using an iterator)
+## 
+import geomap/gdal/[gdal, cpl, gdal_alg]
 from math import ceil
 
 # register all GDAL drivers before this can be used
@@ -168,19 +101,69 @@ type
 
 
 type
-  PixelDataType* = enum ## Representation of how a pixel value is stored
-    i8,   ## 8 bit signed integer
-    u8,   ## 8 bit unsigned integer
-    i16,  ## 16 bit signed integer
-    u16,  ## 16 bit unsigned integer
-    i32,  ## 32 bit signed integer
-    u32,  ## 32 bit unsigned integer
-    f32,  ## 32 bit floating point
-    f64,   ## 64 bit floating point
+  BandDataType* = enum ## Representation of how a pixel value is stored
+    i8 = "8-bit signed integer",   ## 8 bit signed integer
+    u8 = "8-bit unsigned integer",   ## 8 bit unsigned integer
+    i16 = "16-bit signed integer",  ## 16 bit signed integer
+    u16 = "16-bit unsigned integer",  ## 16 bit unsigned integer
+    i32 = "32-bit signed integer",  ## 32 bit signed integer
+    u32 = "32-bit unsigned integer",  ## 32 bit unsigned integer
+    f32 = "32-bit floating point",  ## 32 bit floating point
+    f64 = "64-bit floating point",   ## 64 bit floating point
     none   ## no known data type
 
+func bytesForDataType(dt: BandDataType) : int {.inline.} =
+  case dt
+  of i8, u8: return 1
+  of i16, u16: return 2
+  of i32, u32, f32: return 4
+  of f64: return 8
+  of none: return 1  # 0 bytes would probably lead to bad things
+
+type
+  BandColour* = enum ## How a value in a band models colour
+    Unknown = (0, "Unknown") ## Not known how this band models colour
+    Greyscale = (1, "Greyscale") ## values are greyscale
+    Palette = (2, "Palette") ## values are indicies to a colour table
+    Red = (3, "Red") ## values are the red component of RGBA colour model
+    Green = (4, "Green") ## values are the green component of RGBA colour model
+    Blue = (5, "Blue") ## values are the blue component of RGBA colour model
+    Alpha = (6, "Alpha") ## values are the alpha component of RGBA colour model
+    Hue = (7, "Hue") ## values are the hue component of HSL colour model
+    Saturation = (8, "Saturation") ## values are the saturation component of HSL colour model
+    Lightness = (9, "Lightness") ## values are the lightness component of HSL colour model
+    Cyan = (10, "Cyan") ## values are the cyan component of CMYK colour model
+    Magenta = (11, "Magenta") ## values are the magenta component of CMYK colour model
+    Yellow = (12, "Yellow") ## values are the yellow component of CMYK colour model
+    Black = (13, "Black") ## values are the black component of CMYK colour model
+    Y_Luminance = (14, "Y Luminance") ## values are the Y Luminance of Y Cb Cr colour model
+    Cb_Chroma = (15, "Cb Chroma") ## values are the Cb Chroma of Y Cb Cr colour model
+    Cr_Chroma = (16, "Cr Chroma") ## values are the Cr Chroma of Y Cb Cr colour model
+
+converter toBandColour(bc: GDALColorInterp) : BandColour = 
+  ## implicity convert GDALColorInterp to BandColour
+  case bc:
+  of GCI_Undefined: return Unknown
+  of GCI_GrayIndex: return Greyscale
+  of GCI_PaletteIndex: return Palette
+  of GCI_RedBand: return Red
+  of GCI_GreenBand: return Green
+  of GCI_BlueBand: return Blue
+  of GCI_AlphaBand: return Alpha
+  of GCI_HueBand: return Hue
+  of GCI_SaturationBand: return Saturation
+  of GCI_LightnessBand: return Lightness
+  of GCI_CyanBand: return Cyan
+  of GCI_MagentaBand: return Magenta
+  of GCI_YellowBand: return Yellow
+  of GCI_BlackBand: return Black
+  of GCI_YCbCr_YBand: return Y_Luminance
+  of GCI_YCbCr_CbBand: return Cb_Chroma
+  of GCI_YCbCr_CrBand: return Cr_Chroma
+
+type  
   Interleave* = enum ## how raster data is stored uncompressed in memory
-    BSQ, ## Band Sequential interleaving, aka. planar format.  BSQ stores
+    BSQ = "BSQ", ## Band Sequential interleaving, aka. planar format.  BSQ stores
          ## the raster one band at a time. I.e. All the data for band 1 is
          ## stored first, then band 2, etc.  Represented as a 3D array, the
          ## dimensions of BSQ are [Channel][X][Y]
@@ -206,7 +189,7 @@ type
          ## 
          ## As a 3D array this is of shape [X, Y, Band]
          
-    BIP, ## Band Interleaved by Pixel.  BIP stores the raster each pixel at a
+    BIP = "BIP", ## Band Interleaved by Pixel.  BIP stores the raster each pixel at a
          ## time. Each pixel has the band data written one after another.
          ## The Pixie library and OpenCV store images in this manner.
          ## 
@@ -223,7 +206,7 @@ type
          ## 
          ## As a 3D array this is of the shape [Bands, X, Y]
     
-    BIL, ## Band Interleaved by Line. BIL stores the raster each row at a time.
+    BIL = "BIL", ## Band Interleaved by Line. BIL stores the raster each row at a time.
          ## Each row has the band data written one after another. This is the
          ## least commonly used manner.
          ## 
@@ -233,12 +216,13 @@ type
          ## +-------+-------+-------+-------+-------+-------+-------+
          ## |       | x = 0 | x = 1 | x = 0 | x = 1 | x = 0 | x = 1 |
          ## +=======+=======+=======+=======+=======+=======+=======+
-         ## | y = 0 |   R   |   R   |   B   |   B   |   G   |   G   |
+         ## | y = 0 |   R   |   R   |   G   |   G   |   B   |   B   |
          ## +-------+-------+-------+-------+-------+-------+-------+
-         ## | y = 1 |   R   |   R   |   B   |    B  |   G   |   G   |
+         ## | y = 1 |   R   |   R   |   G   |   G   |   B   |   B   |
          ## +-------+-------+-------+-------+-------+-------+-------+
 
 
+type Image* = object
 
 type Map* = object
   ## An image with geospatial data.  When OpenCV functions in this
@@ -258,21 +242,38 @@ type Map* = object
   
   # raster properties
   width*: int  ## width in pixels of the map. If the map has no
-                 ## raster data, this will be 0. 
+               ## raster data, this will be 0. 
+              
   height*: int ## height in pixels of the map. If the map has no
-                 ## raster data, this will be 0.
-  numBands*: int ## colour bands, otherwise known as channels
+               ## raster data, this will be 0.
+                 
+  numBands*: int ## colour bands, otherwise known as channels. Same as 
+                 ## `bandColours.length`
   
-  bitsPerPixel*: int ## number of bits required to store 1 pixel
-  dataType*: PixelDataType ## data type a pixel is represented as if
-                           ## interpolated
+  bandColours*: seq[BandColour] ## How each band models a colour component.
+                                ## There is one element for `numBands` in order
+                                ## of bands, i.e. bandColours[0] is the first
+                                ## band.
+
+  bitsPerPixel*: int ## Number of bits required to store 1 pixel if it was
+                     ## stored in BIP format. 
+                     
+  dataType*: BandDataType ## Data type used by each band to represent that bands
+                          ## value of a pixel.  Images having bands with different 
+                          ## data types or bit lengths, are converted to a
+                          ## suitable data type to handle each band the same.  
   
-  rasterData*: ptr[byte]  ## raster data stored in a format indicated by
+  # --- TODO: fields below are only filled in when readRaster is called which means
+  # they are indeterminate state until then and should not be referenced
+  # ----
+  rasterData*: ptr[byte]  ## Raster data stored in a format indicated by
                         ## `interleave`
                         ## TODO: ptr can be set once but not changed although
                         ## the contents can be
+  
   rasterDataSize*: uint ## size of `rasterData` in bytes
-  interleave*: Interleave
+
+  interleave*: Interleave ## the interleaving format of `rasterData`
 
 
 proc `=destroy`(this: var Map) =
@@ -297,9 +298,9 @@ type Pos2D = tuple[x: float64, y: float64]
 
 
 
-converter toPixelDataType(gdal: GDALDataType) : PixelDataType =
-  # implicity converts GDALDataType to PixelDataType
-  # e.g. let pdt: PixelDataType = GDT_Byte
+converter toPixelDataType*(gdal: GDALDataType) : BandDataType =
+  ## implicity converts GDALDataType to PixelDataType
+  ## e.g. let pdt: PixelDataType = GDT_Byte
   case gdal:
   of GDT_Unknown: return none
   of GDT_Byte: return u8
@@ -312,10 +313,9 @@ converter toPixelDataType(gdal: GDALDataType) : PixelDataType =
   else: return none
 
 
-
-converter toGDALDataType(dt: PixelDataType) : GDALDataType =
-  # implicity converts PixelDataType to GDALDataType
-  # e.g. let gdal_dt = u8
+converter toGDALDataType(dt: BandDataType) : GDALDataType =
+  ## implicity converts PixelDataType to GDALDataType
+  ## e.g. let gdal_dt = u8
   case dt:
   of u8: return GDT_Byte
   of i8: return GDT_Byte
@@ -329,7 +329,13 @@ converter toGDALDataType(dt: PixelDataType) : GDALDataType =
 
 
 
-proc calcBitsPerPixelAndDataType(hDs: Dataset): (int, PixelDataType) = 
+func bytesPerPixel(bitsPerPixel: int) : int {.inline.} =
+  ## Calcuate the bytes used to store an uncompressed (in memory) pixel.
+  return ceil(bitsPerPixel / 8).int
+
+
+
+func calcBitsPerPixelAndDataType(hDs: Dataset): (int, BandDataType) = 
   ## Calculate the number of bits required to store a pixel and the data type 
   ## that addresses the a pixel value.  If bands have different data types or 
   ## bit lengths then the smallest data type that fully expresses
@@ -349,8 +355,28 @@ proc calcBitsPerPixelAndDataType(hDs: Dataset): (int, PixelDataType) =
       bestDataType = dt
     else:
       bestDataType = GDALDataTypeUnion(dt, bestDataType)
+      #if dt != bestDataType:
+        #raise newException(IOError, 
+        #                  &"""
+        #                  Images having bands with different data types are not
+        #                  supported. Found {bestDataType.toString()} and 
+        #                  {dt.toString()} in same image.
+        #                  """)
 
   return (bpp, bestDataType.toPixelDataType);
+
+
+
+func getBandColours(hDs: Dataset) : seq[BandColour] = 
+  ## retrieve the band colours from the GDAL dataset
+  let numBands = getRasterCount(hDs)
+  var bandColours = newSeq[BandColour](numBands)
+
+  for b in 1..numBands:
+    let hRb = GDALGetRasterBand(hDs, b)
+    bandColours[b - 1] = GDALGetRasterColorInterpretation(hRb)
+
+  return bandColours
 
 
 
@@ -377,16 +403,31 @@ proc open*(path: string): Map {.raises: [IOError].} =
   map.width = getRasterXSize(hDs)
   map.height = getRasterYSize(hDs)
   map.numBands = getRasterCount(hDs)
+  map.bandColours = getBandColours(hDs)
   (map.bitsPerPixel, map.dataType) = calcBitsPerPixelAndDataType(hDs)
 
   return map;
   
 
 
-proc readRaster*(map: var Map): bool = 
-  ## Read a raster of a Map into memory.  It is stored as Band Interleaved by Pixel.
+proc readRaster*(map: var Map, interleave: Interleave): bool = 
+  ## Read a raster of a Map into memory.  It is stored in the format defined
+  ## by `interleave` in left-to-right, top-to-bottom order.  Bands are
+  ## in the same order as the image and you can use `map.bandColours` to determine
+  ## the colour components each band represents and the order of them.
+  ## 
   ## Once this proc successfully returns, the Map will store the raster in 
   ## `map.rasterData`.
+  ## 
+  ## **Images with different band bit lengths**
+  ## 
+  ## Each band in
+  ## the raster will be of the same data type and size.  This means that formats
+  ## with bands of different band bit lengths will use the most suitable bit
+  ## length. E.g. RGB565 format (5 bits red, 6 bits green, 5 bits blue), common
+  ## in embedded systems and cameras, will become 24 bits per pixel instead of
+  ## 16 bits per pixel.
+  ## 
   ## 
   ## TODO: For large images, you can either load a region of interest (clipped
   ## area) or a single band, or a region of interest on a single band.
@@ -405,18 +446,29 @@ proc readRaster*(map: var Map): bool =
   if map.numBands <= 0:
     return false;
 
-  let bytesPerPixel = ceil(map.bitsPerPixel.float / 8'f).int
+  let bytesPerPixel = bytesPerPixel(map.bitsPerPixel)
   map.rasterDataSize = (map.width * map.height * bytesPerPixel).uint
-  #map.rasterData = create(byte, map.rasterDataSize) # dealloced in destructor
   map.rasterData = createU(byte, map.rasterDataSize) # dealloced in destructor
   var bands = newSeq[cint](map.numBands)
   for b in 1..map.numBands:
     bands[b - 1] = b.cint
 
-  #TODO: why does gdal use signed integers for width, height, numBands etc
-  # because then I have to use the same resolution (we could lose data if
-  # we wrote unsigned int to a signed int in GDAL and couldn't handle larger
-  # images anyway)
+  # control how interleaving is done
+  var nPixelSpace, nLineSpace, nBandSpace: cint
+  case interleave
+  of BSQ:
+    nPixelSpace = 0 # GDAL default
+    nLineSpace = 0  # GDAL default
+    nBandSpace = 0  # GDAL default
+  of BIP:
+    nPixelSpace = bytesPerPixel.cint
+    nLineSpace = (bytesPerPixel * map.width).cint
+    nBandSpace = bytesForDataType(map.dataType).cint
+  of BIL:
+    nPixelSpace = bytesForDataType(map.dataType).cint
+    nLineSpace = (bytesPerPixel.cint * map.width).cint
+    nBandSpace = nPixelSpace
+  
   let success = GDALDatasetRasterIOEx(map.hDs,
                         GF_Read,
                         0,
@@ -424,16 +476,16 @@ proc readRaster*(map: var Map): bool =
                         map.width.cint, map.height.cint, # read from these x,y
                         map.rasterData,     # data is read into this memory
                         map.width.cint, map.height.cint, # read until here
-                        map.dataType,       # data type of a individual pixel
+                        map.dataType,       # target data type of a individual pixel
                         map.numBands.cint,        # number of bands to read 
                         bands[0].addr, # bands to read
-                        0.cint,        # bytes from one pixel to the next pixel in 
+                        nPixelSpace,        # bytes from one pixel to the next pixel in 
                                   # the scanline = dt (i.e. pixel interleaved)
-                        0.cint,        # bytes from start of one scanline to the
+                        nLineSpace,        # bytes from start of one scanline to the
                                   # next = dt * nBufXSize (i.e pixel interleaved)
-                        0.cint,        # 
+                        nBandSpace,
                         nil)      # TODO: progress callback
-  
+  map.interleave = interleave
   return success == CE_None
 
 
@@ -559,8 +611,8 @@ proc main(): void =
   #var map = open("chart-nz-5612-napier-roads.jpg")
   #var map = open("DSM_AZ31_1026_2013.tif")
   #var map = open("0703622w_332603s_20200624T090349Z_dtm.tif")
-  var map = open("/Users/nozza/Downloads/rgb.jpeg")
-  echo map.readRaster()
+  var map = open("/Users/nozza/rgb565.bmp")
+  echo map.readRaster(BIP)
   echo "Read"
 
 

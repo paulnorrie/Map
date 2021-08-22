@@ -1,5 +1,6 @@
-
-# TODO: Check if named cstring parameters are in fact ptr cstring
+## To statically link
+## ------------------
+## --dynlibOverride:libgdal --passL:libgdal.a  or {.link libgdal.a.}
 
 when defined(windows):
   const libgdal = "libgdal.dll"
@@ -146,19 +147,19 @@ type GDALRWFlag* {.size: sizeof(cint).} = enum
   GF_Write = 1
 
 type GDALDataType* {.size: sizeof(cint).} = enum
-  GDT_Unknown = 0
-  GDT_Byte = 1
-  GDT_UInt16 = 2
-  GDT_Int16 = 3
-  GDT_UInt32 = 4
-  GDT_Int32 = 5
-  GDT_Float32 = 6
-  GDT_Float64 = 7
-  GDT_CInt16 = 8
-  GDT_CInt32 = 9
-  GDT_CFloat32 = 10
-  GDT_CFloat64 = 11
-  GDT_TypeCount = 12
+  GDT_Unknown = (0, "Unknown")
+  GDT_Byte = (1, "Byte")
+  GDT_UInt16 = (2, "UInt16")
+  GDT_Int16 = (3, "Int16")
+  GDT_UInt32 = (4, "UInt32")
+  GDT_Int32 = (5, "Int32")
+  GDT_Float32 = (6, "Float32")
+  GDT_Float64 = (7, "Float64")
+  GDT_CInt16 = (8, "CInt16")
+  GDT_CInt32 = (9, "CInt32")
+  GDT_CFloat32 = (10, "CFloat32")
+  GDT_CFloat64 = (11, "CFloat64")
+  GDT_TypeCount = (12, "TypeCount")
 
 type GDALRIOResampleAlg*  {.size: sizeof(cint).} = enum
   GRIORA_NearestNeighbour = 0
@@ -184,6 +185,27 @@ type GDALRasterIOExtraArg* = object
   dfYOff: cdouble
   dfXSize: cdouble
   dfYSize: cdouble
+
+type GDALColorInterp* {.size: sizeof(cint).} = enum
+  GCI_Undefined = 0
+  GCI_GrayIndex = 1
+  GCI_PaletteIndex = 2
+  GCI_RedBand = 3
+  GCI_GreenBand = 4
+  GCI_BlueBand = 5
+  GCI_AlphaBand = 6
+  GCI_HueBand = 7
+  GCI_SaturationBand = 8
+  GCI_LightnessBand = 9
+  GCI_CyanBand = 10
+  GCI_MagentaBand = 11
+  GCI_YellowBand = 12
+  GCI_BlackBand = 13
+  GCI_YCbCr_YBand = 14
+  GCI_YCbCr_CbBand = 15
+  GCI_YCbCr_CrBand = 16
+  #GCI_Max = 16
+
 
 const
   OF_ALL*       = 0x00  ## Allow all types of drivers to be used    
@@ -415,6 +437,8 @@ proc getLayer*(hDS: Dataset, iLayer: int32): Layer {.cdecl, dynlib: libgdal, imp
   ## Fetch a layer by index.
 
 proc GDALGetRasterDataType*(hBand: Band) : GDALDataType {.cdecl, dynlib: libgdal, importc: "GDALGetRasterDataType".}
+
+proc GDALGetRasterColorInterpretation*(hBand: Band) : GDALColorInterp {.cdecl, dynlib: libgdal, importc: "GDALGetRasterColorInterpretation".}
 
 proc getRasterXSize*(hDS: Dataset): cint {.cdecl, dynlib: libgdal, importc: "GDALGetRasterXSize".}
 

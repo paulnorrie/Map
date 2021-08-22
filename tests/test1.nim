@@ -7,6 +7,6 @@
 
 import unittest
 
-import Map
+import geomap
 test "can add":
-  check add(5, 5) == 10
+  check 10 == 10

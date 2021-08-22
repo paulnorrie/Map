@@ -12,9 +12,9 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug MapImage",
-            "program": "${workspaceFolder}/src/Map",
+            "program": "${workspaceFolder}/geomap.out",
             "args": [],
-            "cwd": "${workspaceFolder}/src"
+            "cwd": "${workspaceFolder}"
         }
     ]
 }

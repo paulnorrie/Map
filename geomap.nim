@@ -8,73 +8,9 @@
 ## if it's a raster you can get information about it or use its geospatial
 ## reference data without loading the raster into memory.
 ## 
-## Making masks of areas of interest on a Raster
-## ---------------------------------------------
-## Often you want to take a vector polygon and apply it to a raster and do 
-## some operation on the raster inside or outside the polygon.  For example, you
-## want an image to be transparent outside a polygon, or an image to have the
-## outline of a line drawn on the raster.
-## 
-## ``
-## map boundaries = read("boundaries.kml")
-## map image = read("landscape.tif")  #RGB format
-## 
-## # create mask that has 0's on the outside of a polygon
-## let border = boundaries.layers[0].features[0]  # assume this is a polygon
-## let mask = border.createMaskOn(image, mskExterior) # mskBorder, mskInterior
-## image &&= mask  # all pixels on the outside will
-##                 # become black, the remaining stay
-##                 # as they are
-## 
-## Advanced graphics operations on Rasters
-## ---------------------------------------
-## # or for more capability you can use SDL by exporting the border as 
-## a primative polygon
-## 
-## SDL and Java use [x...][y...] while opencv uses [(x,y), (x,y)]
-## 
-## poly: tuple[T][x: seq[T], y: seq[T]]
-## let poly = border.createPolygonOn(image)
-## let rect = border.createRectOn(image)
-## let line = border.createLineOn(image)
-## 
-## # addition, subtraction, bitwise operators
-## dataset operator array1D # apply operator on all bands in dataset with 1D array (dataset is lhs, array is rhs)
-## band operator array1D
-## e.g. let result = map + mask
-## let result = map.bands[0] && mask
-## 
-## # same but in-place (less memory and overwrites lhs)
-## map += mask  #maps raster is overwritten
-## map.bands[0] &&= mask #bands raster is overwritten
-## 
-## # band calculations you export to array and do it yourself
-## e.g. NDVI
-## import arraymancer
-## 
-## proc ndvi[T](nir: T, red: T):
-##    nir + red / nir - red
-## 
-## let tensor = map.toArray().toTensor() #toArray gives shape Channel xHeight x Width
-## let red = map.bands[4]
-## let nir = map.bands[7]
-## map2(red.toArray, ndvi, nir.toArray) # arraymancer
-## 
-## for x = 0 x < width:
-##  for y = 0 y < height:   # faster way of iterating is just one loop
-##    let i = x * width + y
-##    result[i] = red[i] + nir[i] / red[i] - nir[i]
+
 ## 
 ## 
-## calc does not operate on NO_DATA values - they remain the same.  If you don't
-## want that, remove NO_DATA values with map.noDataTo(value: uint8 etc) first
-## 
-## Doing in-place operations requires write permission to storage and the driver
-## to support it along with AddBand() and RemoveBand().  As soon as we do 
-## in-place writes, we may need to create a new dataset and destroy the old one
-##
-## TODO: Reading large rasters one chunk at a time, process them, then read
-## next chunk, process it, etc (probably do this using an iterator)
 ## 
 import geomap/gdal/[gdal, cpl, gdal_alg]
 from math import ceil
@@ -223,19 +159,20 @@ type
 
 
 type Image* = object
+type Raster* = object
+  ## A raster image in memory
+  rasterData*: ptr[byte]  ## Raster data stored in a format indicated by
+                          ## `interleave`
+                          ## TODO: ptr can be set once but not changed although
+                          ## the contents can be
+  rasterDataSize*: uint ## size of `rasterData` in bytes
+  interleave*: Interleave ## the interleaving format of `rasterData`
 
 type Map* = object
   ## An image with geospatial data.  When OpenCV functions in this
   ## module are applied to it, the geospatial data will adjust as
   ## required.  E.g. applying a transform, will transform the
   ## image and the geospatial data.
-  #mat: Mat 3x2x3 (C3) interleaved
-  # R G B A, R G B A, R G B A
-  # R G B A, R G B A, R G B A
-  #
-  # GDAL looks like RasterIO defers to the driver's RasterIO type
-  # so the data is loaded by the driver which may be interleaved
-  #metadata: string ## custom image metadata, depending on format
   
   hDs: Dataset  # pointer to GDAL Dataset
   xformer: Xformer  # transfomer for world to raster coordinates
@@ -257,23 +194,20 @@ type Map* = object
 
   bitsPerPixel*: int ## Number of bits required to store 1 pixel if it was
                      ## stored in BIP format. 
-                     
+  
+  bytesPerPixel*: int ## Number of bytes required to store 1 pixel
+
   dataType*: BandDataType ## Data type used by each band to represent that bands
                           ## value of a pixel.  Images having bands with different 
                           ## data types or bit lengths, are converted to a
                           ## suitable data type to handle each band the same.  
-  
-  # --- TODO: fields below are only filled in when readRaster is called which means
-  # they are indeterminate state until then and should not be referenced
-  # ----
-  rasterData*: ptr[byte]  ## Raster data stored in a format indicated by
-                        ## `interleave`
-                        ## TODO: ptr can be set once but not changed although
-                        ## the contents can be
-  
-  rasterDataSize*: uint ## size of `rasterData` in bytes
 
-  interleave*: Interleave ## the interleaving format of `rasterData`
+
+
+proc `=destroy`(this: var Raster) =
+  if this.rasterData != nil:
+    dealloc(this.rasterData) # must run in the same thread it was allocated on
+
 
 
 proc `=destroy`(this: var Map) =
@@ -287,12 +221,17 @@ proc `=destroy`(this: var Map) =
     else : 
       discard
   
-  if this.rasterData != nil:
-    dealloc(this.rasterData) # must run in the same thread it was allocated on
-  
   if this.hDs != nil:
     close(this.hDs)
   
+
+
+proc dataset*(map: Map) : Dataset =
+  ## Return the handle to the GDAL Dataset of the map. 
+  ## This can be used when calling GDAL functions.
+  map.hDs
+
+
 
 type Pos2D = tuple[x: float64, y: float64]
 
@@ -329,28 +268,22 @@ converter toGDALDataType(dt: BandDataType) : GDALDataType =
 
 
 
-func bytesPerPixel(bitsPerPixel: int) : int {.inline.} =
-  ## Calcuate the bytes used to store an uncompressed (in memory) pixel.
-  return ceil(bitsPerPixel / 8).int
-
-
-
-func calcBitsPerPixelAndDataType(hDs: Dataset): (int, BandDataType) = 
+func calcBitsBytesPerPixelAndDataType(hDs: Dataset): (int, int, BandDataType) = 
   ## Calculate the number of bits required to store a pixel and the data type 
   ## that addresses the a pixel value.  If bands have different data types or 
   ## bit lengths then the smallest data type that fully expresses
   ## all bands is used.
   ## 
-  ## Returns a tuple (bits per pixel, data type).
+  ## Returns a tuple (bits per pixel, bytes per pixel, data type).
   ## If the dataset does not have a raster, this will return (0, none)
   
-  var bpp: int = 0
+  var bitsPerPixel: int = 0
   var bestDataType: GDALDataType
   
   for b in 1..getRasterCount(hDs):
     let hRb = GDALGetRasterBand(hDs, b)
     let dt = GDALGetRasterDataType(hRb)
-    bpp += GDALGetDataTypeSizeBits(dt)
+    bitsPerPixel += GDALGetDataTypeSizeBits(dt)
     if b == 1:
       bestDataType = dt
     else:
@@ -363,7 +296,9 @@ func calcBitsPerPixelAndDataType(hDs: Dataset): (int, BandDataType) =
         #                  {dt.toString()} in same image.
         #                  """)
 
-  return (bpp, bestDataType.toPixelDataType);
+  let bytesPerPixel = ceil(bitsPerPixel / 8).int
+
+  return (bitsPerPixel, bytesPerPixel, bestDataType.toPixelDataType);
 
 
 
@@ -404,20 +339,20 @@ proc open*(path: string): Map {.raises: [IOError].} =
   map.height = getRasterYSize(hDs)
   map.numBands = getRasterCount(hDs)
   map.bandColours = getBandColours(hDs)
-  (map.bitsPerPixel, map.dataType) = calcBitsPerPixelAndDataType(hDs)
+  (map.bitsPerPixel, map.bytesPerPixel, map.dataType) = calcBitsBytesPerPixelAndDataType(hDs)
 
   return map;
   
 
 
-proc readRaster*(map: var Map, interleave: Interleave): bool = 
+proc readRaster*(map: var Map, interleave: Interleave = BIP): Raster = 
   ## Read a raster of a Map into memory.  It is stored in the format defined
   ## by `interleave` in left-to-right, top-to-bottom order.  Bands are
   ## in the same order as the image and you can use `map.bandColours` to determine
   ## the colour components each band represents and the order of them.
   ## 
-  ## Once this proc successfully returns, the Map will store the raster in 
-  ## `map.rasterData`.
+  ## Library methods do not require calling `readRaster`.  This method exists
+  ## only for interoperability with other image libraries.
   ## 
   ## **Images with different band bit lengths**
   ## 
@@ -443,12 +378,13 @@ proc readRaster*(map: var Map, interleave: Interleave): bool =
   # => 19
   # = 11
 
-  if map.numBands <= 0:
-    return false;
+  var dst = Raster()
 
-  let bytesPerPixel = bytesPerPixel(map.bitsPerPixel)
-  map.rasterDataSize = (map.width * map.height * bytesPerPixel).uint
-  map.rasterData = createU(byte, map.rasterDataSize) # dealloced in destructor
+  if map.numBands <= 0:
+    return dst;
+
+  dst.rasterDataSize = (map.width * map.height * map.bytesPerPixel).uint
+  dst.rasterData = createU(byte, dst.rasterDataSize) # dealloced in destructor
   var bands = newSeq[cint](map.numBands)
   for b in 1..map.numBands:
     bands[b - 1] = b.cint
@@ -461,32 +397,36 @@ proc readRaster*(map: var Map, interleave: Interleave): bool =
     nLineSpace = 0  # GDAL default
     nBandSpace = 0  # GDAL default
   of BIP:
-    nPixelSpace = bytesPerPixel.cint
-    nLineSpace = (bytesPerPixel * map.width).cint
+    nPixelSpace = map.bytesPerPixel.cint
+    nLineSpace = (map.bytesPerPixel * map.width).cint
     nBandSpace = bytesForDataType(map.dataType).cint
   of BIL:
     nPixelSpace = bytesForDataType(map.dataType).cint
-    nLineSpace = (bytesPerPixel.cint * map.width).cint
+    nLineSpace = (map.bytesPerPixel.cint * map.width).cint
     nBandSpace = nPixelSpace
   
-  let success = GDALDatasetRasterIOEx(map.hDs,
-                        GF_Read,
-                        0,
-                        0,
-                        map.width.cint, map.height.cint, # read from these x,y
-                        map.rasterData,     # data is read into this memory
-                        map.width.cint, map.height.cint, # read until here
-                        map.dataType,       # target data type of a individual pixel
-                        map.numBands.cint,        # number of bands to read 
-                        bands[0].addr, # bands to read
-                        nPixelSpace,        # bytes from one pixel to the next pixel in 
-                                  # the scanline = dt (i.e. pixel interleaved)
-                        nLineSpace,        # bytes from start of one scanline to the
-                                  # next = dt * nBufXSize (i.e pixel interleaved)
-                        nBandSpace,
-                        nil)      # TODO: progress callback
-  map.interleave = interleave
-  return success == CE_None
+  # read into memory in requested interleaving
+  let success = GDALDatasetRasterIOEx(
+                map.hDs,
+                GF_Read,
+                0,
+                0,
+                map.width.cint, map.height.cint, # read from these x,y
+                dst.rasterData,     # data is read into this memory
+                map.width.cint, map.height.cint, # read until here
+                map.dataType,       # target data type of a individual pixel
+                map.numBands.cint,  # number of bands to read 
+                bands[0].addr,      # bands to read
+                nPixelSpace,        # bytes from one pixel to the next pixel in 
+                                    # the scanline = dt (i.e. pixel interleaved)
+                nLineSpace,         # bytes from start of one scanline to the
+                                    # next = dt * nBufXSize (i.e pixel interleaved)
+                nBandSpace,
+                nil)                # TODO: progress callback
+  dst.interleave = interleave
+  if success != CE_None:
+    raise newException(IOError, $CPLGetLastErrorMsg())
+  return dst
 
 
 

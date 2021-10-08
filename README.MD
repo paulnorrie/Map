@@ -35,7 +35,7 @@ in the same scope.
 
 You can convert world coordinates to raster coordinates this way:
 ``
-var map = geomap.openRaster("picture.tif")
+var map = geomap.open("picture.tif")
 let (x, y) = map.worldToPixel(-36.9, 174.8)
 ``
 This example uses latitude and longitude world coordinates.  You must
@@ -81,7 +81,7 @@ map image = geomap.openRaster("landscape.tif")  #satellite image in RGB format
 
 ```
 let border = boundaries.layers[0].features[0]  # assume this is a polygon
-let mask = border.createMaskOn(image, mskExterior) # mskBorder, mskInterior
+let mask = border.createMaskOn(image, mskExterior, pen) # mskBorder, mskterior using the pen
 image &&= mask  # all pixels on the outside will
                 # become black, the remaining stay
                 # as they are
@@ -155,13 +155,13 @@ the structure (bands, data type), then you must create a new raster to do this.
 ## OpenCV
 ```
 let map = geomap.openRaster("image.tif")
-map.readRaster(BIP)  # OpenCV needs pixel interleaved format in memory
+let raster = map.readRaster(BIP)  # OpenCV needs pixel interleaved format in memory
 let mat = constructMat(map.height.cint,
              map.width.cint,
             toOpenCVType(map.dataType, map.numBands), 
-            map.rasterData)
-
+            raster.rasterData)
 # we now have a Mat object we can do things with in OpenCV
+# if we want to display it with imshow we must convert to BGR colour space
 ```
 
 

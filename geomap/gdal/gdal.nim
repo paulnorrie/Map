@@ -424,6 +424,10 @@ proc GDALDatasetRasterIOEx*(hDS: Dataset, eRWFlag: GDALRWFlag, nXOff: cint, nYOf
 
 proc GDALGetDataTypeName*(eDataType: GDALDataType) : cstring {.cdecl, dynlib: libgdal, importc: "GDALGetDataTypeName".}
 
+proc GDALGetBlockSize*(hBand: Band, xsize: ptr cint, ysize: ptr cint) {.importc: "GDALGetBlockSize".}
+
+proc GDALReadBlock*(hBand: Band, nXBlockOff: cint, bYBlockOff: cint, pImage: pointer) {.importc: "GDALGetBlockSize".}
+
 proc open*(pszFilename: cstring, nOpenFlags: int32, papszAllowedDrivers: cstring, papszOpenOptions: cstring, papszSiblingFiles: cstring): Dataset {.cdecl, dynlib: libgdal, importc: "GDALOpenEx".}
   ## Open a raster or vector file as a Dataset.
 

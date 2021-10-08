@@ -34,7 +34,7 @@
 # TODO: support for NoData
 
 
-import ../geomap, gdal/gdal, calcexpr
+import calcexpr
 import tables, algorithm, macros
 
 type
@@ -206,23 +206,23 @@ macro bsqCalc*(
 
 
 
-proc numBlocks(map: Map) : (int, int) =
-    # Return the number of blocks horizontally and vertically in the maps
-    # raster.
-    # A block is the most efficient size to read and is determined by the
-    # driver.  If the image is tiled, it is normally the size of a tile. 
-    # Otherwise it is normally a scanline.
-    let hDs = map.dataset()
-    let band = GDALGetRasterBand(hDs, 1)
-    var blockXSize, blockYSize: int  
-    GDALGetBlockSize(
-        band,
-        cast[ptr cint](blockXSize.unsafeAddr),
-        cast[ptr cint](blockYSize.unsafeAddr)
-    )
-    let numXBlocks:int = int( (map.width + blockXSize - 1) / blockXSize)
-    let numYBlocks:int = int( (map.height + blockYSize - 1) / blockYSize)
-    return (numXBlocks, numYBlocks)
+#proc numBlocks(map: Map) : (int, int) =
+#   # Return the number of blocks horizontally and vertically in the maps
+#   # raster.
+#   # A block is the most efficient size to read and is determined by the
+#   # driver.  If the image is tiled, it is normally the size of a tile. 
+#   # Otherwise it is normally a scanline.
+#   let hDs = map.dataset()
+#   let band = GDALGetRasterBand(hDs, 1)
+#   var blockXSize, blockYSize: int  
+#   GDALGetBlockSize(
+#       band,
+#       cast[ptr cint](blockXSize.unsafeAddr),
+#       cast[ptr cint](blockYSize.unsafeAddr)
+#   )
+#   let numXBlocks:int = int( (map.width + blockXSize - 1) / blockXSize)
+#   let numYBlocks:int = int( (map.height + blockYSize - 1) / blockYSize)
+#   return (numXBlocks, numYBlocks)
 
 
 
@@ -242,35 +242,35 @@ proc numBlocks(map: Map) : (int, int) =
     #return dst
 
 
-proc calc*(map: Map, `expr`: string, `type`: typedesc, progress: Progress = NoProgress) : Map =
-    ## Scalar calulation on one Map, producing an output Map with one band.
-    ## 
-    ## A `ValueError` is raised if `expr` is invalid.
-     
-    # Get block sizes so we can loop through map efficiently
-    let (numXBlocks, numYBlocks) = numBlocks(map)
-    
-    # what bands are needed to be read in the expression?
-    let exprInfo = bindToBands(`expr`, @[map.numBands]) #getImageAndBandNumbers(`expr`)
-
-    for x in 0..numXBlocks:
-        for y in 0..numYBlocks:
-            var bandsData = newSeq[1, pointer]
-            try:
-                # read band data for each required band    
-                for i in 0..exprInfo.bandOrdinalsFor(0).len():
-                    let size = map.width * map.height * map.bytesPerPixel
-                    let pBandData = createU(byte, size) # for threads createSharedU?
-                    bandsData.add(pBandData)
-                    GDALReadBlock(i, x, y, pBandData) # TODO: images of non-aligned blocks
-            
-                # output is a sequence of datatype
-                bsqCalc `expr`, {'A': bandsData}
-
-            finally:
-                # free memory
-                for i in bandsData:
-                    dealloc(bandsData[i]) # must run in same thread as createShared
+#proc calc*(map: Map, `expr`: string, `type`: typedesc, progress: Progress = NoProgress) : Map =
+#    ## Scalar calulation on one Map, producing an output Map with one band.
+#    ## 
+#    ## A `ValueError` is raised if `expr` is invalid.
+#     
+#    # Get block sizes so we can loop through map efficiently
+#    let (numXBlocks, numYBlocks) = numBlocks(map)
+#    
+#    # what bands are needed to be read in the expression?
+#    let exprInfo = bindToBands(`expr`, @[map.numBands]) #getImageAndBandNumbers(`expr`)
+#
+#    for x in 0..numXBlocks:
+#        for y in 0..numYBlocks:
+#            var bandsData = newSeq[1, pointer]
+#            try:
+#                # read band data for each required band    
+#                for i in 0..exprInfo.bandOrdinalsFor(0).len():
+#                    let size = map.width * map.height * map.bytesPerPixel
+#                    let pBandData = createU(byte, size) # for threads createSharedU?
+#                    bandsData.add(pBandData)
+#                    GDALReadBlock(i, x, y, pBandData) # TODO: images of non-aligned blocks
+#            
+#                # output is a sequence of datatype
+#                bsqCalc `expr`, {'A': bandsData}
+#
+#            finally:
+#                # free memory
+#                for i in bandsData:
+#                    dealloc(bandsData[i]) # must run in same thread as createShared
             
 
 

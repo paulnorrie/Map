@@ -123,7 +123,7 @@ func parseVarForBandOrdinal(value: string) : uint16  {.inline.} =
     
     
 
-func findVars*(s: string) : seq[string] {. inline .} =
+func findVars(s: string) : seq[string] {. inline .} =
     ## Find variables of the form \b[A-Z][0-9]*\b without using regex.
     var vars = newSeq[string]()
     var currentVar: string

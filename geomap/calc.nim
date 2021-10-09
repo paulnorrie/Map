@@ -1,7 +1,7 @@
 ## Calculations on rasters, e.g. NDVI.
 ##
 ## Calculations must be provided at compile time by referencing one of the
-## `calc` templates which require an expression to calculate.
+## `calc` macros which require an expression to evaluate.
 ## 
 ## Expressions
 ## -----------
@@ -10,11 +10,13 @@
 ## in a `Map`.  The expression references image data with variables
 ## of the form: `[A..Z][1..65536]` where:
 ## -  a letter A-Z is an image
-## -  an integer in the range 1-65536 is a band in the image, or if missing, all bands
+## -  an integer in the range 1-65536 is a band in the image,
+## or if missing, all bands
 ## 
 ## e.g.
 ## - `A2`is the second band in the first image
 ## - `B10`is the tenth band in the second image
+## - `B`is all bands in the second image
 ## 
 ## Nim functions other than algebraic operators available in the `system`
 ## module should not be used.
@@ -61,31 +63,8 @@ func countBands(data: BSQData) : seq[int] {.inline.} =
   return counts
 
 
-# 1.  Pass to bsqCalc static expression and not ExprInfo.
-#     This means bandCounts in bindToBands(expr, bandCounts) must be known at 
-#     compile-time and passed statically to bsqCalc.
-#
-#     E.g. calling bsqCalc:
-#       bsqCalc "A + 1", @[3]   (2nd parameter is bandCounts)
-#     
-# 2.  Pass to bsqCalc the node identifier of BSQData so we know what variable
-#     to interrogate. 
-#
-#     E.g. 
-#       let data: BSQData = ....
-#       bsqCalc "A1 + B1", @[1, 1], data
-#
-# 3. Still need to pass dst for dst.len
-#
-#    E.g.
-#       let data: BSQData[float32] = ...
-#       var dst:seq[float32] = ...
-#       bsqCalc "A1 + B1", @[1, 1], data, dst
-#
-# 4. Make sure macro doesn't use variables already in scope (pixelIx, A1, imageOrd)
-#    This is unlikely but possible
 
-macro bsqCalc*(
+macro calc*(
   `expr`: static[string],
   bandCounts: static seq[int],
   src: BSQData,
@@ -233,8 +212,8 @@ macro bsqCalc*(
 
 
 #proc calc*(rasterBandsByImage: BSQData, `expr`: string, D: typedesc, progress: Progress = NoProgress) : seq[D] =
-    ## Evaluate an expression, `expr`, on raster data in `rasterBandsByImage`.
-    ## This returns a sequence representing the result of the type `D.`
+    # Evaluate an expression, `expr`, on raster data in `rasterBandsByImage`.
+    # This returns a sequence representing the result of the type `D.`
     #var dst = newSeq[D](3)
     #let bandCounts = rasterBandsByImage.countBands()
     #let bindings = bindToBands(`expr`, bandCounts) # can't evaluate at compile time because don't have image data

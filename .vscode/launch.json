@@ -5,16 +5,42 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Debug MapImage",
             "preLaunchTask": "build",
             "preRunCommands": [
                 "command script import --allow-reload ./nimlldb.py"
             ],
             "type": "lldb",
             "request": "launch",
-            "name": "Debug MapImage",
             "program": "${workspaceFolder}/geomap.out",
             "args": [],
             "cwd": "${workspaceFolder}"
+        },
+
+        {
+            "name": "Debug Test",
+            "preLaunchTask": "build test",
+            "preRunCommands": [
+                "command script import --allow-reload ./nimlldb.py"
+            ],
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/test_calcexpr",
+            "args": [],
+            "cwd": "${workspaceFolder}/tests"
+        },
+
+        {
+            "name": "Debug Test 1",
+            "preLaunchTask": "build test1",
+            "preRunCommands": [
+                "command script import --allow-reload ./nimlldb.py"
+            ],
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/test1",
+            "args": [],
+            "cwd": "${workspaceFolder}/tests"
         }
     ]
 }

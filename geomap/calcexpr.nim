@@ -8,7 +8,7 @@
 ## - No more than 26 images are supported (images A-Z)
 ## - No image with more than 65,535 bands is supported
 
-import strformat, strutils, tables, typetraits
+import strformat, strutils, tables, typetraits, sets
 
 template toSet*(iter: untyped): untyped =
   ## Returns a built-in set from the elements of the iterable `iter`.
@@ -123,9 +123,9 @@ func parseVarForBandOrdinal(value: string) : uint16  {.inline.} =
     
     
 
-func findVars(s: string) : seq[string] {. inline .} =
+func findVars(s: string) : HashSet[string] {. inline .} =
     ## Find variables of the form \b[A-Z][0-9]*\b without using regex.
-    var vars = newSeq[string]()
+    var vars = initHashSet[string]()
     var currentVar: string
     for i in 0..(s.len - 1):
         let c = s[i]
@@ -139,7 +139,7 @@ func findVars(s: string) : seq[string] {. inline .} =
             currentVar.add(c)
         elif currentVar.len != 0:
             # finished a variable
-            vars.add(currentVar)
+            vars.incl(currentVar)
             currentVar = ""
         else:
             # not a variable or no longer a variable
@@ -147,7 +147,7 @@ func findVars(s: string) : seq[string] {. inline .} =
  
     # add last var if needed   
     if currentVar.len != 0:
-        vars.add(currentVar)
+        vars.incl(currentVar)
     
     return vars
 

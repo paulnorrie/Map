@@ -6,7 +6,26 @@
 # To run these tests, simply execute `nimble test`.
 
 import unittest
+import geomap/calc, geomap/calcexpr, tables, macros, typetraits
 
-import geomap
-test "can add":
-  check 10 == 10
+macro ast(e: static[string]): untyped =
+  let tree = parseStmt(e)
+  echo tree.treeRepr
+  echo tree[0].kind
+  echo tree[0].len
+  if tree[0].kind == nnkAsgn:
+    echo "Assign " & tree[0][0].repr
+
+
+proc entry() = 
+  ast("A1 = 2 * 3")
+  #StmtList
+  #Asgn
+  #  Ident "A1"
+  #  Infix
+  #    Ident "*"
+  #    IntLit 2
+  #    IntLit 3
+
+entry()
+

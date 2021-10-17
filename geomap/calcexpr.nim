@@ -8,7 +8,8 @@
 ## - No more than 26 images are supported (images A-Z)
 ## - No image with more than 65,535 bands is supported
 
-import strformat, strutils, tables, typetraits, sets
+import tables, typetraits, sets, strutils, strformat
+import calctypes
 
 template toSet*(iter: untyped): untyped =
   ## Returns a built-in set from the elements of the iterable `iter`.
@@ -26,26 +27,29 @@ template toSet*(iter: untyped): untyped =
   result
 
 
-type
+type        
     VarInfo* = object
-        ## Information about a variable in an expression
+        ## Information about an (expanded) variable in an expression.
+        ## Expanded variables always have a band ordinal
         ident*: string
+            ## the identifier of the variable (e.g. A1, B)
         imageOrd*: uint8
+            ## the index of the image data this variable is bound to
         imageId*: char
-        bandOrd*: uint16
+            ## the identifier of the image only without the band
+        bandOrd*: BandOrd
+            ## the band ordinal of this variable
 
     ExprInfo* = object
-        ## Information about an expression
+        ## Information about an assignment sexpression
         exprRepr*: string
+            ## the expression represented as a string
+        vector: bool
         imageOrds: set[uint8]
         imageIdents: set[char]
-        bandOrdsForImage: Table[uint8, set[uint16]]
+        bandOrdsForImage: Table[uint8, set[BandOrd]]
         vars: seq[VarInfo]
 
-proc constructExprInfo() : ExprInfo {.inline.} =
-    ## Create a new ExprInfo object
-    var info: ExprInfo
-    return info
 
 
 proc addImage(info: var ExprInfo, imageOrd: uint8, imageId: char) =
@@ -74,7 +78,7 @@ proc imageOrdinals*(info: ExprInfo): set[uint8] {.inline.} =
 
 
 
-proc bandOrdinalsFor*(info: ExprInfo, imageOrdinal: uint8): set[uint16] {.inline.} =
+proc bandOrdinalsFor*(info: ExprInfo, imageOrdinal: uint8): set[BandOrd] {.inline.} =
     ## What are the ordinals of the bands of an image used in an expression.
     ## The expression is previously parsed by `parse`.
     ## 
@@ -90,6 +94,16 @@ proc variables*(info: ExprInfo): seq[VarInfo] {.inline.} =
     return info.vars
 
 
+proc isScalar*(info: ExprInfo): bool {.inline.} =
+    ## The expression in `info` is scalar if all variables specify a band
+    ## e.g. "A1 + A2 / B1 + B2" is scalar while "A / 2" is not.
+    return not info.vector
+
+proc isVector*(info: ExprInfo): bool {.inline.} =
+    ## The expression in `info` is vector if at least one variable specifies
+    ## all bands
+    ## e.g. "A / 3" is a vector expression
+    return info.vector
 
 func parseVarForImageOrdinal(value: string) : uint8  {.inline.} =
     ## A2 -> 0, D33 -> 3, B -> 1
@@ -106,25 +120,33 @@ func parseVarForImageOrdinal(value: string) : uint8  {.inline.} =
 
 func parseVarForBandOrdinal(value: string) : uint16  {.inline.} =
     ## B1 -> 1, A2 -> 2, D69 -> 69, ...
-    ## No band num returns 0 (e.g. B -> 0)
-    if value.len == 1: return 0
+    ## if value is just a letter, than returns 0 indicating all bands in that
+    ## image should be used
     
+    if value.len == 1: return 0
+
     let bandOrdStr = value[1..^1]
     try:
         let bandOrd = parseUInt bandOrdStr
-        if bandOrd > 65535:
+        if bandOrd > high(BandOrd):
             raise new ValueError
         return uint16 bandOrd 
     except:
         raise newException(
             ValueError,
-            fmt"Expected variable with digit band identifier [1-9]. Got band '{bandOrdStr}' in variable '{value}'"
+            fmt"Expected variable with digit band identifier [1-65535]. Got band '{bandOrdStr}' in variable '{value}'"
             )
     
     
 
-func findVars(s: string) : HashSet[string] {. inline .} =
-    ## Find variables of the form \b[A-Z][0-9]*\b without using regex.
+func findVarIdents(s: string) : HashSet[string] =
+    ## Find variable identifiers of the form \b[A-Z][0-9]*\b without using regex.
+    
+    # We don't use regex because this function may be called at compile time. 
+    # Nim does not support cast[]
+    # or FFI at compile time so using the (impure) regex library causes
+    # "Error: VM does not support 'cast' from tySet to tyInt32" on compile.
+
     var vars = initHashSet[string]()
     var currentVar: string
     for i in 0..(s.len - 1):
@@ -153,6 +175,52 @@ func findVars(s: string) : HashSet[string] {. inline .} =
 
 
 
+proc isVector*(`expr`: string) : bool =
+    ## Is a given expression a vector expression, i.e. at least one image variable
+    ## references all band numbers (e.g. 'A', 'B')
+    var isVector: bool
+    let idents = `expr`.findVarIdents()
+    for ident in idents:
+        let bandOrd = parseVarForBandOrdinal(ident)
+        if bandOrd == 0:
+            isVector = true
+            break; 
+    return isVector;
+
+
+
+proc isScalar*(`expr`: string) : bool {. inline .} =
+    ## Is a given expression a scalar expression, i.e. all variables reference
+    ## a band number (e.g. 'A1', 'B3')
+    return not isVector(`expr`)
+
+
+
+proc isVarIdentAVector(ident: string) : bool {. inline .} =
+    ## Is a variable identifier a vector referencing multiple bands
+    ## e.g. 'A'  => true
+    ##      'A1' => false
+    let bandOrd = parseVarForBandOrdinal(ident)
+    return bandOrd == 0
+
+
+
+proc expandVarIdents(idents: HashSet[string], bandCounts: seq[int]) : HashSet[string] =
+    ## Expand variable identifiers if needed (e.g. ['A', 'B1'] -> ['A1', 'A2', 'B1'])
+    var newIdents = initHashSet[string]()
+    for ident in idents:
+        if ident.isVarIdentAVector():
+            # expand
+            let imageOrd = parseVarForImageOrdinal(ident)
+            let imageId = ident[0]
+            for bandOrd in 1'u16..uint16 bandCounts[imageOrd]:
+                newIdents.incl(imageId & $imageOrd)
+        else:
+            newIdents.incl(ident)
+    return newIdents
+
+
+    
 func bindToBands*(`expr`: string, bandCounts: seq[int]) : ExprInfo {.raises: [ValueError].}  =
     ## Bind the variables in `expr` to a band in an image.
     ## 
@@ -168,33 +236,28 @@ func bindToBands*(`expr`: string, bandCounts: seq[int]) : ExprInfo {.raises: [Va
     ## If `expr` contains an image or band number that is not available in
     ## `maps`, then a `ValueError` is raised.
     
-    var info = constructExprInfo()
+    var info: ExprInfo
     info.exprRepr = `expr`
     
-    # This function may be called at compile time. Nim does not support cast[]
-    # (or FFI) at compile time so using the (impure) regex library causes
-    # "Error: VM does not support 'cast' from tySet to tyInt32" on compile.
-    # So we parse manually.
-    
-    #let regex = re(r"\b[A-Z][0-9]*\b")
-    #let variables = `expr`.findAll(regex)
+    # get all variable identifiers with their band ordinals. i.e. all identifiers
+    # should be scalar.
+    var idents = `expr`.findVarIdents()          # may be scalar and vector
+    idents = expandVarIdents(idents, bandCounts) # now they are all scalar
 
-    let variables = `expr`.findVars()
-
-    for variable in variables:
+    for ident in idents:
 
         # image number (e.g. A -> 0)
-        let imageOrd = parseVarForImageOrdinal(variable)
+        let imageOrd = parseVarForImageOrdinal(ident)
         if imageOrd >= uint8 bandCounts.len: #number of images
             raise newException(
                 ValueError,
-                "No image is provided for " & variable[0] & " in " & " variable"
+                "No image is provided for " & ident[0] & " in " & " variable"
                 )
-        let imageId = variable[0]
+        let imageId = ident[0]
         info.addImage(imageOrd, imageId)
          
         # add band(s)
-        let bandOrd = parseVarForBandOrdinal(variable)
+        let bandOrd = parseVarForBandOrdinal(ident)
         if bandOrd > uint16 bandCounts[imageOrd]:
             raise newException(
                 ValueError,
@@ -202,30 +265,13 @@ func bindToBands*(`expr`: string, bandCounts: seq[int]) : ExprInfo {.raises: [Va
                 ". Image has " & $bandCounts[imageOrd] & " bands." #bands in a particular image
                 )
          
-        if bandOrd == 0:
-             # use all bands for this image
-             let series = toSet 1'u16..uint16 bandCounts[imageOrd] #same
-             info.bandOrdsForImage[imageOrd] = series
-             
-             # add multiple IdentInfo objects
-             for b in 1'u16..uint16 bandCounts[imageOrd]:
-                var ident: VarInfo
-                ident.ident = imageId & $b
-                ident.imageOrd = imageOrd
-                ident.imageId = imageId
-                ident.bandOrd = b
-                info.vars.add(ident)
-        else:
-             # add specified band
-             info.bandOrdsForImage[imageOrd].incl(bandOrd)
-
-             # add the IdentInfo object
-             var ident: VarInfo
-             ident.ident = imageId & $bandOrd
-             ident.imageOrd = imageOrd
-             ident.imageId = imageId
-             ident.bandOrd = bandOrd
-             info.vars.add(ident)
+        info.bandOrdsForImage[imageOrd].incl(bandOrd)
+        # add the IdentInfo object
+        var variable = VarInfo(bandOrd: bandOrd)
+        variable.ident = imageId & $bandOrd
+        variable.imageOrd = imageOrd
+        variable.imageId = imageId
+        info.vars.add(variable)
     
     return info
 

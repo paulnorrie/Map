@@ -183,7 +183,7 @@ type Map* = object
               
   height*: int ## height in pixels of the map. If the map has no
                ## raster data, this will be 0.
-                 
+               
   numBands*: int ## colour bands, otherwise known as channels. Same as 
                  ## `bandColours.length`
   

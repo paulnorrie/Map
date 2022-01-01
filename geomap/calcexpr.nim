@@ -60,7 +60,7 @@ proc addImage(info: var ExprInfo, imageOrd: uint8, imageId: char) =
 
 
 
-proc imageIds*(info: ExprInfo): set[char] {.inline.} =
+proc imageIds*(info: ExprInfo): set[ImageIdType] {.inline.} =
     ## What are the identifiers of the images used in an expression. 
     ## The expression is previously parsed by `parse`.
     ## 
@@ -105,7 +105,23 @@ proc isVector*(info: ExprInfo): bool {.inline.} =
     ## e.g. "A / 3" is a vector expression
     return info.vector
 
-func parseVarForImageOrdinal(value: string) : uint8  {.inline.} =
+func toImageId*(value: uint8) : ImageIdType {.inline.} =
+  ## Converts an image ordinal from 0 - 25 to an id, or ValueError if out of 
+  ## range.
+  ## 
+  ## e.g.
+  ## 
+  ## 0 -> "A", 1 -> "B", ..., 25 -> "Z"
+  if (value >= 0 and value <= 25):
+    result = char(value + 65)
+  else:
+    raise newException(
+                      ValueError,
+                      fmt"value {value} is outside range of allowed ordinals 0..25")
+
+
+
+func parseVarForImageOrdinal*(value: string) : ImageOrdinalType  {.inline.} =
     ## A2 -> 0, D33 -> 3, B -> 1
     if not value[0].isAlphaAscii():
         raise newException(
@@ -118,12 +134,12 @@ func parseVarForImageOrdinal(value: string) : uint8  {.inline.} =
 
 
 
-func parseVarForBandOrdinal(value: string) : uint16  {.inline.} =
+func parseVarForBandOrdinal*(value: string) : BandOrdinalType  {.inline.} =
     ## B1 -> 1, A2 -> 2, D69 -> 69, ...
     ## if value is just a letter, than returns 0 indicating all bands in that
     ## image should be used
     
-    if value.len == 1: return 0
+    if value.len == 1: return hasNoBand
 
     let bandOrdStr = value[1..^1]
     try:
@@ -138,8 +154,20 @@ func parseVarForBandOrdinal(value: string) : uint16  {.inline.} =
             )
     
     
+func parseImageAndBandId*(value: string) : VariableInfo =
+  ## Parse a variable as a string to it's image id, ordinal and band ordinal.
+  ## 
+  ## e.g.
+  ## 
+  ## "D3" -> ("D", 3, 3)
+  ## "B" -> ("B", 1, hasNoBand)
+  let imgOrd = parseVarForImageOrdinal(value)
+  let imgId = toImageId(imgOrd)
+  let bandOrd = parseVarForBandOrdinal(value)
+  return (imgId, imgOrd, bandOrd)
 
-func findVarIdents(s: string) : HashSet[string] =
+
+func findVarIdents*(s: string) : HashSet[string] =
     ## Find variable identifiers of the form \b[A-Z][0-9]*\b without using regex.
     
     # We don't use regex because this function may be called at compile time. 

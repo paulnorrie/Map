@@ -40,10 +40,10 @@ type
     len: int
     data: ptr[T]
 
-proc initUnsafeSeq*[T](data: ptr[T], len: int) : UnsafeSeq =
-  ## Create an UnsafeSeq
-  UnsafeSeq(data: data, len: len)
-  
+proc initUnsafeSeq*[T](data: ptr[T], len: int) : UnsafeSeq[T] =
+  ## Create an UnsafeSeq with a pointer to data type of T
+  UnsafeSeq[T](data: data, len: len)
+
 template `+`[T](p: ptr T, off: int): ptr T =
   ## Adds an offset to a pointer
   cast[ptr type(p[])](cast[ByteAddress](p) +% off * sizeof(p[]))
@@ -238,7 +238,7 @@ var dstAB: array[len, float32]
 var dstCD: array[len, uint8]
 
 let p: ptr[float32] = a[0].addr
-let unsafeA = UnsafeSeq[float32](data: p, len: len)
+let unsafeA = initUnsafeSeq[float32](p, len) #UnsafeSeq[float32](data: p, len: len)
 let unsafeVectors = {"A1": unsafeA, "B1": unsafeA}.toTable()
 var unsafeDst = newSeq[float32](len)
 

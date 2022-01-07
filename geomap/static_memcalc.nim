@@ -1,13 +1,27 @@
-## Arithmetic calculations on contiguous memory.  This module is for when the
-## arithmetic expression (e.g. "A + B") is known at compile-time.  This allows
-## the compiler to generate code that uses SIMD instructions if possible.  Even
-## if not, there is no runtime expression parsing so it is faster.
+## Arithmetic calculations on contiguous memory.  This module takes an expression
+## , e.g. "A + B", and a sequence for each variable and evaluates the expression
+## on each item in the sequence.
 ## 
-## To use this module, call the `evaluateScalar` macro.
+## E.g. "A + B" on A = @[0, 1], B = @[2, 3] = @[2, 4]
 ## 
-## SIMD Instructions
-## ------------------
-## C/C++ Compilers do a good job of auto-vectorising this code with SIMD .
+## The expressions must be known at compile-time. This allows
+## the compiler to generate code that uses SIMD instructions if possible, and
+## use custom procedures.  
+## 
+## Expressions
+## -----------
+## An expression contains variables of the form [A-Z][0-65535]?. Examples of
+## valid variables are: "A", "C5", but not: "5C",  "1" or "red".
+## 
+## Expressions can use Nims arithmetic operators and system procedures as long
+## as they works on numeric data.  You can use math procedures or even custom
+## procedures as long as they are imported in the module that calls 
+## `evaluateScalar`_.
+## 
+## 
+## Compiling against SIMD instruction sets
+## ---------------------------------------
+## C/C++ Compilers do a good job of auto-vectorising this code with SIMD 
 ## instructions.
 ## You may need to compile with auto-vectorisation arguments by using
 ## the `--passC:`compiler argument to pass to the C/C++ compiler.  
@@ -27,8 +41,8 @@
 ## 
 ## 
   
-import std/tables, std/random, std/macros, sets, strformat, typetraits, math
-import calcexpr, ../geomap
+import std/tables, std/macros, sets, strformat, typetraits
+import calcexpr
 
 type 
   UnsafeSeq*[T] {.requiresInit.} = object
@@ -59,11 +73,34 @@ template `[]`[T](useq: UnsafeSeq[T], off: int): T =
 type ArrayLike[T] = seq[T] | UnsafeSeq[T]
   
 
+proc getSingleGenericType(node: NimNode) : string = 
+  ## String representation of a variable identifier that contains a generic type
+  ## Returns T from: seq[T], array[N, T]
+  let supportedKinds: set[NimTypeKind] = {ntyArray, ntySequence}
+  if (node.typeKind() notin supportedKinds):
+    raise newException(ValueError, fmt"Unhandled node kind {node.typeKind()}")
 
-macro genEvaluateBody[T](
+  # either array[N, T] or seq[T] or UnsafeSeq
+  result = getTypeInst(node)[0].repr
+  case result
+    of "array": result = getTypeInst(node)[2].repr
+    of "seq": result = getTypeInst(node)[1].repr
+    else: raise newException(ValueError, fmt"Unandled type {result} of 'node'")
+
+proc getSourceGenericType(node: NimNode) : string = 
+  ## String representation of a variable identifier that contains two generic types
+  ## Returns V from: Table[K, ArrayLike[V]]
+  let base = getTypeInst(node)[0].repr
+  case base
+    of "Table": result = getTypeInst(node)[2][1].repr
+    else: raise newException(ValueError, fmt"Unandled type {result} of 'node'")
+
+
+
+macro genEvaluateBody[S, D](
   expression: static[string],
-  vectors: Table[string, ArrayLike[T]], #seq[T | SomeNumber]],
-  dst: var openarray[T]): untyped =
+  vectors: Table[string, ArrayLike[S]], #seq[T | SomeNumber]],
+  dst: var openarray[D | SomeNumber]): untyped =
   ## Generates the body of the 
   ## `evaluate <#evaluate>`_ macro 
   let fnBody = newStmtList()                 # StmtList
@@ -108,12 +145,13 @@ macro genEvaluateBody[T](
   #
   # var A1, B1, etc: float32
   # -----------------------------------------
-  let dataTypeStr = getTypeInst(dst)[2].repr
+  var srcDataTypeStr = getSourceGenericType(vectors) # getSingleGenericType(dst)
+  
   var varSection = newNimNode(nnkVarSection)      # VarSection
   var varIdentDefs = newNimNode(nnkIdentDefs)     #   IdentDefs
   for varIdent in idents.items():
     varIdentDefs.add(ident varIdent)              #     Ident "A1" (etc)
-  varIdentDefs.add(ident dataTypeStr)             #     Ident "float32"
+  varIdentDefs.add(ident srcDataTypeStr)          #     Ident "float32"
   varIdentDefs.add(newEmptyNode())                #     Empty
   varSection.add(varIdentDefs)
   fnBody.add(varSection)
@@ -151,12 +189,18 @@ macro genEvaluateBody[T](
     )
     autoVecLoopBody.add(asgn)  
   
+  let dstTypeString = getSingleGenericType(dst)
   autoVecLoopBody.add(
     newAssignment(                                #       Asgn
       newNimNode(nnkBracketExpr).add(             #         BracketExpr
         ident dst.strVal,                         #           Ident "dst"
         ident "i"),                               #           Ident "i"
-      parseExpr(expression)                       # the NimNode of the expression
+      newDotExpr(                                 #         DotExpr
+        newPar(                                   #           Par
+          parseExpr(expression)                   #             the NimNode of the expression
+        ),
+        ident dstTypeString                       #           Ident "float64
+      )
     )
   )
   
@@ -165,14 +209,16 @@ macro genEvaluateBody[T](
 
 
 
-macro evaluateScalar*[T](
+macro evaluateScalar*[S, D](
   expression: static[string],
-  vectors: Table[string, ArrayLike[T]],
-  dst: var openarray[T]): untyped =
-  ## Evaluate a scalar expression on sequences of numeric data of type T.
+  vectors: Table[string, ArrayLike[S]],
+  dst: var openarray[D | SomeNumber],
+  dstOffset: int = 0): untyped =
+  ## Evaluate a scalar expression on sequences of numeric data of type S,
+  ## and resulting in type D.
   ## 
   ## The expression is a nim expression using built in operators 
-  ## for numeric types and functions from std/math.
+  ## for numeric types.
   ## 
   ## `vectors` maps variable identifiers with their sequence of data, e.g.
   ## `{"A1", @[0.4, 0.5], "B1", @[0.1, 0.2]}`.  The values in `vectors` can
@@ -183,10 +229,25 @@ macro evaluateScalar*[T](
   ## data in `vectors`, otherwise a `KeyError`will be raised.
   ## 
   ## The length of `dst`and each value in `vectors` should be
-  ## the same.
+  ## the same or `IndexDefect` is raised.
+  ## 
+  ## If the destination data type, D, is different to source data type, S, the
+  ## result is `type converted <https://nim-lang.org/docs/manual.html#statements-and-expressions-type-conversions>`_.
+  ## 
+  ## Type conversions from signed to unsigned integers, will result in negative
+  ## numbers being wrapped (e.g. -1'i8 -> 255'u8)
+  ## 
+  ## Any under- or overflows from signed or floating point types will result 
+  ## in a OverflowDefect being raised.   Unsigned types will wrap around.  
+  ## You could check the maximum and minimum value in the `vectors` and test 
+  ## they are in the low .. high bounds of D, prior to calling.
+  ## 
+  ## Optionally an offset to the destination buffer can be provided to write
+  ## the result starting at `dst[offset]`.  This enables you to call 
+  ## this function to operate only on a part of `dst`.
   
-  # Example of generated code with two variables, A1, and B1, and floating
-  # point data:
+  # Example of generated code with two variables, float32 A1, and B1, 
+  # and float64 dst:
   # ----------------------------------------------------------------------
   # block:
   #   try:
@@ -197,15 +258,12 @@ macro evaluateScalar*[T](
   #     for i in 0 ..< vectorsLen:
   #         A1 = A1data[i]
   #         B1 = B1data[i]
-  #         dst[i] = A1 + B1
+  #         dst[i + dstOffset] = (A1 + B1).float64
   #   except KeyError:
   #     var k = getCurrentException()
   #     k.msg &= ".  The `expression` in call to `evaluate` contains this " &
   #               "variable which is not in `vectors`." 
   #     raise k
-  if isVector(`expression`):
-    error(`expression` & " is a vector so unsupported")
-
   quote do:
     block:
       try:
@@ -215,47 +273,4 @@ macro evaluateScalar*[T](
         k.msg &= ".  The `expression` in call to macro `evaluate` contains " &
                  "this variable that is not in `vectors` argument." 
         raise k
-
-
-
-  
-
-
-const len = 8# * 1024 * 1024
-var a = newSeq[float32](len)
-var b = newSeq[float32](len)
-var c = newSeq[uint8](len)
-var d = newSeq[uint8](len)
-
-for i in 0 .. len - 1:
-    a[i] = rand(1.0'f32)
-    b[i] = a[i]
-    c[i] = rand(255).uint8
-    d[i] = c[i]
-let vectorsAB = {"A1": a, "B1": b}.toTable()
-let vectorsCD = {"C1": c, "D1": d}.toTable()
-var dstAB: array[len, float32]
-var dstCD: array[len, uint8]
-
-let p: ptr[float32] = a[0].addr
-let unsafeA = initUnsafeSeq[float32](p, len) #UnsafeSeq[float32](data: p, len: len)
-let unsafeVectors = {"A1": unsafeA, "B1": unsafeA}.toTable()
-var unsafeDst = newSeq[float32](len)
-
-evaluateScalar("A1 + B1", unsafeVectors, dstAB) 
-echo a
-echo b
-echo dstAB
-echo "----"
-# do we know the destination type at compile time
-evaluateScalar("A1 + B1", vectorsAB, dstAB)
-echo a
-echo b
-echo dstAB
-echo "======"
-evaluateScalar("C1 + D1 div 3", vectorsCD, dstCD)
-echo c
-echo d
-echo dstCD
-
 

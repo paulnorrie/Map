@@ -1,9 +1,10 @@
-import tables
+import tables, raster
 
-type 
-  ImageIdType = char
-  BandOrdinalType = uint16
-  BandDataPtr = pointer
-  BandOrd* = range[1'u16 .. high(uint16)]
-        ## Band Ordinal is the number of the band that ranges 1..65535
-  BSQData*[T] = Table[char, Table[BandOrd, seq[T]]]
+type  
+  BandDataPtr* = pointer
+  
+  
+  BSQData*[T] = Table[char, Table[ValidBandOrdinal, seq[T]]]
+
+#const hasNoBand*: BandOrdinalType = 0
+## A variable is a vector variable without a band, e.g. "A", "D"

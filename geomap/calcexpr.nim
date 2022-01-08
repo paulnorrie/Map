@@ -9,7 +9,7 @@
 ## - No image with more than 65,535 bands is supported
 
 import tables, typetraits, sets, strutils, strformat
-import calctypes
+import calctypes, raster
 
 template toSet*(iter: untyped): untyped =
   ## Returns a built-in set from the elements of the iterable `iter`.
@@ -37,7 +37,7 @@ type
             ## the index of the image data this variable is bound to
         imageId*: char
             ## the identifier of the image only without the band
-        bandOrd*: BandOrd
+        bandOrd*: BandOrdinalType
             ## the band ordinal of this variable
 
     ExprInfo* = object
@@ -47,7 +47,7 @@ type
         vector: bool
         imageOrds: set[uint8]
         imageIdents: set[char]
-        bandOrdsForImage: Table[uint8, set[BandOrd]]
+        bandOrdsForImage: Table[uint8, set[BandOrdinalType]]
         vars: seq[VarInfo]
 
 
@@ -78,7 +78,7 @@ proc imageOrdinals*(info: ExprInfo): set[uint8] {.inline.} =
 
 
 
-proc bandOrdinalsFor*(info: ExprInfo, imageOrdinal: uint8): set[BandOrd] {.inline.} =
+proc bandOrdinalsFor*(info: ExprInfo, imageOrdinal: uint8): set[BandOrdinalType] {.inline.} =
     ## What are the ordinals of the bands of an image used in an expression.
     ## The expression is previously parsed by `parse`.
     ## 
@@ -139,12 +139,12 @@ func parseVarForBandOrdinal*(value: string) : BandOrdinalType  {.inline.} =
     ## if value is just a letter, than returns 0 indicating all bands in that
     ## image should be used
     
-    if value.len == 1: return hasNoBand
+    if value.len == 1: return 0
 
     let bandOrdStr = value[1..^1]
     try:
         let bandOrd = parseUInt bandOrdStr
-        if bandOrd > high(BandOrd):
+        if bandOrd > high(BandOrdinalType):
             raise new ValueError
         return uint16 bandOrd 
     except:
@@ -168,7 +168,7 @@ func parseImageAndBandId*(value: string) : VariableInfo =
 
 
 func findVarIdents*(s: string) : HashSet[string] =
-    ## Find variable identifiers of the form \b[A-Z][0-9]*\b without using regex.
+    ## Find variable identifiers of the form \b[A-Z][0-9]?\b without using regex.
     
     # We don't use regex because this function may be called at compile time. 
     # Nim does not support cast[]

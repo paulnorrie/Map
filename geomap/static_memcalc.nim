@@ -70,7 +70,8 @@ template `[]`[T](useq: UnsafeSeq[T], off: int): T =
   (p + off)[]
   
   
-type ArrayLike[T] = seq[T] | UnsafeSeq[T]
+type ArrayLike*[T] = seq[T] | UnsafeSeq[T]
+  ## seq[T] or UnsafeSeq[T]
   
 
 proc getSingleGenericType(node: NimNode) : string = 

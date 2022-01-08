@@ -222,9 +222,9 @@ type
       ## the number of blocks horizontally in the grid
     yBlockCount*: int
       ## the number of blocks vertically in the grid
-    xPixelSize*: int
+    xPixels*: int
       ## the number of horizontal pixels in each block
-    yPixelSize*: int  
+    yPixels*: int  
       ## the number of vertical pixels in each block
 
 
@@ -570,8 +570,8 @@ proc blockInfo*(map: Map) : BlockInfo =
   var blocks: BlockInfo
   blocks.xBlockCount = numXBlocks
   blocks.yBlockCount = numYBlocks
-  blocks.xPixelSize = blockXSize
-  blocks.yPixelSize = blockYSize
+  blocks.xPixels = blockXSize
+  blocks.yPixels = blockYSize
 
   return blocks
 

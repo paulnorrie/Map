@@ -25,8 +25,8 @@ proc commonBlockInfo(rasterMaps: TableRef[ImageIdType, Map], blockInfo: var Bloc
       let md = rasterMap.readRasterMetadata()
       commonBlockInfo.xBlockCount = 1
       commonBlockInfo.yBlockCount = md.height
-      commonBlockInfo.xPixelSize = md.width
-      commonBlockInfo.yPixelSize = 1
+      commonBlockInfo.xPixels = md.width
+      commonBlockInfo.yPixels = 1
       result = false
       break
 
@@ -47,7 +47,7 @@ proc readBlock[T](x, y: int,
   ## The block sizes must be the same for all rasters.  
   ## This can be determined by calling `commonBlockInfo`.
   ## 
-  ## `blockSize` gives the size of the block in pixels to read.
+  ## `blockInfo` gives the size of the block in pixels to read.
   ## 
   ## Each variable in `variables` identifies the Map to read followed by the
   ## band, using the standard variable notation.    
@@ -58,10 +58,10 @@ proc readBlock[T](x, y: int,
   # TODO: right and lower blocks may be larger than image
   let band = readBand(map, 
                       bandOrd, 
-                      x * blockInfo.xPixelSize, 
-                      y * blockInfo.yPixelSize, 
-                      blockInfo.xPixelSize, 
-                      blockInfo.yPixelSize)
+                      x * blockInfo.xPixels, 
+                      y * blockInfo.yPixels, 
+                      blockInfo.xPixels, 
+                      blockInfo.yPixels)
   return cast[seq[T]](band.data)
     
 
@@ -87,7 +87,7 @@ template calcBlock[D](expression: static[string],
     let map = maps[varInfo.imageId]
     vectors[varIdent] = readBlock[T](x, y, blockInfo, map, varInfo.bandOrd)
 
-    offset = offset + (actualXSize * actualYSize)
+    offset = offset + (actualXSize * actualYSize) #TODO: determine actual sizes
   
   # compute the calculation for the block
   evaluateScalar(expression, vectors, dst, offset) # TODO: offset not yet supported

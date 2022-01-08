@@ -408,7 +408,9 @@ proc readRaster*(map: Map,
   ## passing `x`, `y`, `width`, and `height` pixel coordinates of the rectangle.
   ## For most efficient partial reads, `x`, and `y` should be aligned
   ## on block boundaries and `width` and `height` should be the size of the
-  ## block.  This information can be obtained by calling `blockInfo`_ . 
+  ## block.  This information can be obtained by calling `blockInfo`_ . If `x`,
+  ## `y`, `width`, and `height` are out of the boundaries of the image, 
+  ## IOError is raised.
   ## 
   ## If `bands` is empty, all bands are read. Otherwise the bands given in
   ## `bands` will be read.  Bands start from 1.  A ValueError is thrown if
@@ -528,7 +530,9 @@ proc readBand*(map: Map,
   ## passing `x`, `y`, `width`, and `height` pixel coordinates of the rectangle.
   ## For most efficient partial reads, `x`, and `y` should be aligned
   ## on block boundaries and `width` and `height` should be the size of the
-  ## block.  This information can be obtained by calling `blockInfo`_ . 
+  ## block.  This information can be obtained by calling `blockInfo`_ . If `x`,
+  ## `y`, `width`, and `height` are out of the boundaries of the image, 
+  ## IOError is raised.
   ## 
   ## If the Map has no raster data, a ValueError is raised.
   ## 

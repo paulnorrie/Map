@@ -101,9 +101,10 @@ proc getSourceGenericType(node: NimNode) : string =
 macro genEvaluateBody[S, D](
   expression: static[string],
   vectors: Table[string, ArrayLike[S]], #seq[T | SomeNumber]],
-  dst: var openarray[D | SomeNumber]): untyped =
-  ## Generates the body of the 
-  ## `evaluate <#evaluate>`_ macro 
+  dst: var openarray[D | SomeNumber],
+  dstOffset: int): untyped =
+  ## Generates the body of the `evaluate <#evaluate>`_ macro 
+
   let fnBody = newStmtList()                 # StmtList
 
   # ----------------------------------------------------
@@ -195,7 +196,12 @@ macro genEvaluateBody[S, D](
     newAssignment(                                #       Asgn
       newNimNode(nnkBracketExpr).add(             #         BracketExpr
         ident dst.strVal,                         #           Ident "dst"
-        ident "i"),                               #           Ident "i"
+        newNimNode(nnkInfix).add(                 #            Infix
+          ident "+",                              #             Ident "+"
+          ident "i",                              #             Ident "i"
+          dstOffset                         #             Ident "dstOffset"
+        )
+      ),                                          
       newDotExpr(                                 #         DotExpr
         newPar(                                   #           Par
           parseExpr(expression)                   #             the NimNode of the expression
@@ -268,7 +274,7 @@ macro evaluateScalar*[S, D](
   quote do:
     block:
       try:
-        genEvaluateBody(`expression`, `vectors`, `dst`)
+        genEvaluateBody(`expression`, `vectors`, `dst`, `dstOffset`)
       except KeyError:
         var k = getCurrentException()
         k.msg &= ".  The `expression` in call to macro `evaluate` contains " &

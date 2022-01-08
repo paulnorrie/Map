@@ -41,7 +41,7 @@ runnableExamples:
 
 
 type
-  RasterDataType* = enum 
+  RasterDataType* {.pure.} = enum 
     ## Representation of how a pixel value or band value is stored, 
     ## implicity initialises to `none`
     none   ## no known data type
@@ -68,47 +68,47 @@ type
   BandColour* = enum 
     ## How a value in a band models colour, implicity 
     ## initialises to `Unknown`
-    Unknown = (0, "Unknown") ## Not known how this band models colour
-    Greyscale = (1, "Greyscale") ## values are greyscale
-    Palette = (2, "Palette") ## values are indicies to a colour table
-    Red = (3, "Red") ## values are the red component of RGBA colour model
-    Green = (4, "Green") ## values are the green component of RGBA colour model
-    Blue = (5, "Blue") ## values are the blue component of RGBA colour model
-    Alpha = (6, "Alpha") ## values are the alpha component of RGBA colour model
-    Hue = (7, "Hue") ## values are the hue component of HSL colour model
-    Saturation = (8, "Saturation") ## values are the saturation component of HSL colour model
-    Lightness = (9, "Lightness") ## values are the lightness component of HSL colour model
-    Cyan = (10, "Cyan") ## values are the cyan component of CMYK colour model
-    Magenta = (11, "Magenta") ## values are the magenta component of CMYK colour model
-    Yellow = (12, "Yellow") ## values are the yellow component of CMYK colour model
-    Black = (13, "Black") ## values are the black component of CMYK colour model
-    Y_Luminance = (14, "Y Luminance") ## values are the Y Luminance of Y Cb Cr colour model
-    Cb_Chroma = (15, "Cb Chroma") ## values are the Cb Chroma of Y Cb Cr colour model
-    Cr_Chroma = (16, "Cr Chroma") ## values are the Cr Chroma of Y Cb Cr colour model
+    bcUnknown = (0, "Unknown") ## Not known how this band models colour
+    bcGreyscale = (1, "Greyscale") ## values are greyscale
+    bcPalette = (2, "Palette") ## values are indicies to a colour table
+    bcRed = (3, "Red") ## values are the red component of RGBA colour model
+    bcGreen = (4, "Green") ## values are the green component of RGBA colour model
+    bcBlue = (5, "Blue") ## values are the blue component of RGBA colour model
+    bcAlpha = (6, "Alpha") ## values are the alpha component of RGBA colour model
+    bcHue = (7, "Hue") ## values are the hue component of HSL colour model
+    bcSaturation = (8, "Saturation") ## values are the saturation component of HSL colour model
+    bcLightness = (9, "Lightness") ## values are the lightness component of HSL colour model
+    bcCyan = (10, "Cyan") ## values are the cyan component of CMYK colour model
+    bcMagenta = (11, "Magenta") ## values are the magenta component of CMYK colour model
+    bcYellow = (12, "Yellow") ## values are the yellow component of CMYK colour model
+    bcBlack = (13, "Black") ## values are the black component of CMYK colour model
+    bcY_Luminance = (14, "Y Luminance") ## values are the Y Luminance of Y Cb Cr colour model
+    bcCb_Chroma = (15, "Cb Chroma") ## values are the Cb Chroma of Y Cb Cr colour model
+    bcCr_Chroma = (16, "Cr Chroma") ## values are the Cr Chroma of Y Cb Cr colour model
 
 converter toBandColour(bc: GDALColorInterp) : BandColour = 
   ## implicity convert GDALColorInterp to BandColour
   case bc:
-  of GCI_Undefined: return Unknown
-  of GCI_GrayIndex: return Greyscale
-  of GCI_PaletteIndex: return Palette
-  of GCI_RedBand: return Red
-  of GCI_GreenBand: return Green
-  of GCI_BlueBand: return Blue
-  of GCI_AlphaBand: return Alpha
-  of GCI_HueBand: return Hue
-  of GCI_SaturationBand: return Saturation
-  of GCI_LightnessBand: return Lightness
-  of GCI_CyanBand: return Cyan
-  of GCI_MagentaBand: return Magenta
-  of GCI_YellowBand: return Yellow
-  of GCI_BlackBand: return Black
-  of GCI_YCbCr_YBand: return Y_Luminance
-  of GCI_YCbCr_CbBand: return Cb_Chroma
-  of GCI_YCbCr_CrBand: return Cr_Chroma
+  of GCI_Undefined: return bcUnknown
+  of GCI_GrayIndex: return bcGreyscale
+  of GCI_PaletteIndex: return bcPalette
+  of GCI_RedBand: return bcRed
+  of GCI_GreenBand: return bcGreen
+  of GCI_BlueBand: return bcBlue
+  of GCI_AlphaBand: return bcAlpha
+  of GCI_HueBand: return bcHue
+  of GCI_SaturationBand: return bcSaturation
+  of GCI_LightnessBand: return bcLightness
+  of GCI_CyanBand: return bcCyan
+  of GCI_MagentaBand: return bcMagenta
+  of GCI_YellowBand: return bcYellow
+  of GCI_BlackBand: return bcBlack
+  of GCI_YCbCr_YBand: return bcY_Luminance
+  of GCI_YCbCr_CbBand: return bcCb_Chroma
+  of GCI_YCbCr_CrBand: return bcCr_Chroma
 
 type  
-  Interleave* = enum ## how raster data is stored uncompressed in memory
+  Interleave* {.pure.}= enum ## how raster data is stored uncompressed in memory
     BSQ = "BSQ", ## Band Sequential interleaving, aka. planar format.  BSQ stores
          ## the raster one band at a time. I.e. All the data for band 1 is
          ## stored first, then band 2, etc.  Represented as a 3D array, the

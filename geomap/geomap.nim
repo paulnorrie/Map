@@ -49,7 +49,7 @@ type
   Xformer* = ref XformerObj
 
 type MapKind = enum
-  Raster, Vector
+  mkRaster, mkVector
 
 {.experimental: "notnil".}
 
@@ -66,9 +66,9 @@ type Map* = object
   path: string
   isCopy: bool
   case kind: MapKind 
-  of Raster:
+  of mkRaster:
     xformer: Xformer  # transfomer for world to raster coordinates
-  of Vector:
+  of mkVector:
     tbd: int # TBD
 
 
@@ -85,7 +85,7 @@ proc `=destroy`(this: var Map) =
   #echo "--"
   #echo fmt"Destroying map at {this.unsafeAddr.repr}"
   #echo "--"
-  if this.kind == Raster and this.xformer != nil:
+  if this.kind == mkRaster and this.xformer != nil:
     case this.xformer.kind:
     of xfGCP: 
       GDALDestroyGCPTransformer(this.xformer.gcp)
@@ -129,9 +129,9 @@ proc open*(path: string): Map {.raises: [IOError].} =
   else:
     var kind: MapKind
     if GDALGetRasterCount(hDs) > 0:
-      kind = Raster
+      kind = mkRaster
     else:
-      kind = Vector
+      kind = mkVector
 
     var map = Map(kind: kind, hDs: hDs, path: path)
 

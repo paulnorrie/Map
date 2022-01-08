@@ -52,16 +52,25 @@ proc readBlock[T](x, y: int,
   ## Each variable in `variables` identifies the Map to read followed by the
   ## band, using the standard variable notation.    
 
+  # don't read beyond boundaries of band
+  let meta = map.readRasterMetadata()
+  let x = x * blockInfo.xPixels
+  let y = y * blockInfo.yPixels
+  var width = blockInfo.xPixels
+  if x + width > meta.width:  
+    width = meta.width - x
+  var height = blockInfo.yPixels
+  if y + height > meta.height:
+    height = meta.height - y
+  
   # use RasterIO and not GDALReadBlock, as we can't tell if the maps
   # have the same block size, which is why we asked for the block size.
-
-  # TODO: right and lower blocks may be larger than image
   let band = readBand(map, 
                       bandOrd, 
-                      x * blockInfo.xPixels, 
-                      y * blockInfo.yPixels, 
-                      blockInfo.xPixels, 
-                      blockInfo.yPixels)
+                      x, 
+                      y, 
+                      width, 
+                      height)
   return cast[seq[T]](band.data)
     
 
@@ -77,7 +86,6 @@ template calcBlock[D](expression: static[string],
   ## type T and store the result in `dst`  
   
   var vectors: Table[string, seq[T]]
-  var actualXSize, actualYSize: int
   
   # read blocks for each variable
   for varIdent in varIdents.items():
@@ -87,7 +95,7 @@ template calcBlock[D](expression: static[string],
     let map = maps[varInfo.imageId]
     vectors[varIdent] = readBlock[T](x, y, blockInfo, map, varInfo.bandOrd)
 
-    offset = offset + (actualXSize * actualYSize) #TODO: determine actual sizes
+    offset = offset + vectors[varIdent].len 
   
   # compute the calculation for the block
   evaluateScalar(expression, vectors, dst, offset) # TODO: offset not yet supported
@@ -96,6 +104,7 @@ template calcBlock[D](expression: static[string],
 
 macro castRasterData(ident: untyped, raster: Raster, bandDataType: static[RasterDataType]) =
   ## var `ident` = cast[seq[`bandDataType`]](`raster`.data)
+  
   let dataTypeStr = bandDataType.toNimTypeStr()
   result = newStmtList(
     newVarStmt(ident,

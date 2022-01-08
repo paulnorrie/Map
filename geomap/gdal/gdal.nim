@@ -111,6 +111,9 @@ type
     MultiPolygon25D        ## 2.5D extension as per 99-402
     GeometryCollection25D  ## 2.5D extension as per 99-402
 
+proc `$`*(ds:Dataset) : string =
+  result = ds.unsafeAddr.repr
+
 type GDAL_GCP* {.importc: "struct GDAL_GCP", header: "gdal.h".} = object  
   pszId*: cstring
   pszInfo*: cstring
@@ -424,9 +427,9 @@ proc GDALDatasetRasterIOEx*(hDS: Dataset, eRWFlag: GDALRWFlag, nXOff: cint, nYOf
 
 proc GDALGetDataTypeName*(eDataType: GDALDataType) : cstring {.cdecl, dynlib: libgdal, importc: "GDALGetDataTypeName".}
 
-proc GDALGetBlockSize*(hBand: Band, xsize: ptr cint, ysize: ptr cint) {.importc: "GDALGetBlockSize".}
+proc GDALGetBlockSize*(hBand: Band, xsize: ptr cint, ysize: ptr cint) {.cdecl, dynlib: libgdal,importc: "GDALGetBlockSize".}
 
-proc GDALReadBlock*(hBand: Band, nXBlockOff: cint, bYBlockOff: cint, pImage: pointer) {.importc: "GDALGetBlockSize".}
+proc GDALReadBlock*(hBand: Band, nXBlockOff: cint, bYBlockOff: cint, pImage: pointer) {.cdecl, dynlib: libgdal, importc: "GDALReadBlock".}
 
 proc open*(pszFilename: cstring, nOpenFlags: int32, papszAllowedDrivers: cstring, papszOpenOptions: cstring, papszSiblingFiles: cstring): Dataset {.cdecl, dynlib: libgdal, importc: "GDALOpenEx".}
   ## Open a raster or vector file as a Dataset.
@@ -448,7 +451,7 @@ proc getRasterXSize*(hDS: Dataset): cint {.cdecl, dynlib: libgdal, importc: "GDA
 
 proc getRasterYSize*(hDS: Dataset): cint {.cdecl, dynlib: libgdal, importc: "GDALGetRasterYSize".}
 
-proc getRasterCount*(hDS: Dataset): cint {.cdecl, dynlib: libgdal, importc: "GDALGetRasterCount".}
+proc GDALGetRasterCount*(hDS: Dataset): cint {.cdecl, dynlib: libgdal, importc: "GDALGetRasterCount".}
 
 proc resetReading*(hLayer: Layer) {.cdecl, dynlib: libgdal, importc: "OGR_L_ResetReading".}
   ## Reset feature reading to start on the first feature.

@@ -446,9 +446,10 @@ proc readRaster*(map: Map,
     for b in 1..md.numBands:
       readBands[b - 1] = b.cint
   else:
-    for b in 0 ..< bands.len:
-      readBands[b] = b.cint
-
+    readBands = newSeq[cint](bands.len)
+    for b in 1 .. bands.len:
+      readBands[b - 1] = b.cint
+  
   # control how interleaving is done
   var nPixelSpace, nLineSpace, nBandSpace: cint
   case interleave
@@ -481,7 +482,7 @@ proc readRaster*(map: Map,
                 result.data[0].addr,     # data is read into this memory
                 readWidth.cint, readHeight.cint, # 1:1 (no overviews/scaling)
                 md.bandDataType,    # target data type of a individual band value
-                md.numBands.cint,   # number of bands to read 
+                readBands.len.cint,   # number of bands to read 
                 readBands[0].addr,  # bands to read
                 nPixelSpace,        # bytes from one pixel to the next pixel in 
                                     # the scanline = dt (i.e. pixel interleaved)

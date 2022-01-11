@@ -104,9 +104,8 @@ macro genEvaluateBody[S, D](
   dst: var openarray[D | SomeNumber],
   dstOffset: int): untyped =
   ## Generates the body of the `evaluate <#evaluate>`_ macro 
-
+  
   let fnBody = newStmtList()                 # StmtList
-
   # ----------------------------------------------------
   # iterator over all variable identifiers in expression
   #
@@ -131,7 +130,6 @@ macro genEvaluateBody[S, D](
   for varIdent in idents.items():
     firstVariable = varIdent & "data"
     break
-
   let vectorsLenStmt = newLetStmt(                  # LetSection
                                                     #   IdentDefs
     ident "vectorsLen",                             #     Ident "vectorsLen"
@@ -148,7 +146,6 @@ macro genEvaluateBody[S, D](
   # var A1, B1, etc: float32
   # -----------------------------------------
   var srcDataTypeStr = getSourceGenericType(vectors) # getSingleGenericType(dst)
-  
   var varSection = newNimNode(nnkVarSection)      # VarSection
   var varIdentDefs = newNimNode(nnkIdentDefs)     #   IdentDefs
   for varIdent in idents.items():
@@ -170,9 +167,8 @@ macro genEvaluateBody[S, D](
     ident "..<",                                  #       Ident "..<"
     newIntLitNode(0),                             #       IntLit 0
     ident "vectorsLen")                           #       Ident "vectorsLen"
-
   forStmt.add(rangeDef)
-
+  
   # ---------------------------------------------------------
   # body of the loop that does the arithmetic; designed to be
   # auto-vectorised by compilers
@@ -190,7 +186,6 @@ macro genEvaluateBody[S, D](
         ident "i")                                #           Ident "i"
     )
     autoVecLoopBody.add(asgn)  
-  
   let dstTypeString = getSingleGenericType(dst)
   autoVecLoopBody.add(
     newAssignment(                                #       Asgn
@@ -210,8 +205,8 @@ macro genEvaluateBody[S, D](
       )
     )
   )
-  
   forStmt.add(autoVecLoopBody) 
+
   fnBody.add(forStmt)
 
 
@@ -274,10 +269,9 @@ macro evaluateScalar*[S, D](
   quote do:
     block:
       try:
-        genEvaluateBody(`expression`, `vectors`, `dst`, `dstOffset`)
+         genEvaluateBody(`expression`, `vectors`, `dst`, `dstOffset`)
       except KeyError:
         var k = getCurrentException()
         k.msg &= ".  The `expression` in call to macro `evaluate` contains " &
                  "this variable that is not in `vectors` argument." 
         raise k
-

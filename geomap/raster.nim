@@ -468,11 +468,9 @@ proc readRaster*(map: Map,
     readBands = newSeq[cint](bands.len)
     for b in 1 .. bands.len:
       readBands[b - 1] = b.cint
-    echo "readBands = " & $readBands
 
   # instantiate raster
   result = initRaster(md.width, md.height, readBands.len, interleave, md.bandDataType)
-  echo "raster data len = " & $result.data.len
 
   # control how interleaving is done
   var nPixelSpace, nLineSpace, nBandSpace: cint

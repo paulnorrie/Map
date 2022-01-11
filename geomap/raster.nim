@@ -171,24 +171,24 @@ type
 type RasterMetadata* {.requiresinit.} = object 
   ## information about a Raster
   
-  width*: int  ## width in pixels of the map.  
+  width: int  ## width in pixels of the map.  
               
-  height*: int ## height in pixels of the map. 
+  height: int ## height in pixels of the map. 
                
-  numBands*: int ## colour bands, otherwise known as channels. Same as 
+  numBands: int ## colour bands, otherwise known as channels. Same as 
                  ## `bandColours.length`
   
-  bandColours*: seq[BandColour] ## How each band models a colour component.
+  bandColours: seq[BandColour] ## How each band models a colour component.
                                 ## There is one element for `numBands` in order
                                 ## of bands, i.e. bandColours[0] is the first
                                 ## band.  This may not be known.
 
-  bitsPerPixel*: int ## Number of bits required to store 1 pixel if it was
+  bitsPerPixel: int ## Number of bits required to store 1 pixel if it was
                      ## stored in BIP format. 
   
-  bytesPerPixel*: int ## Number of bytes required to store 1 pixel
+  bytesPerPixel: int ## Number of bytes required to store 1 pixel
 
-  bandDataType*: RasterDataType 
+  bandDataType: RasterDataType 
     ## Data type required to represent one bands (not pixel) value.
     ## Images having bands with different 
     ## data types or bit lengths, are converted to a
@@ -197,6 +197,27 @@ type RasterMetadata* {.requiresinit.} = object
     ## band (e.g. 16-bit 565RGB), will be expanded to a 8-bit
     ## data type.  In this example `bandDataType` would be `u8` and `bitsPerPixel`
     ## would be 16.
+
+proc width*(meta: RasterMetadata) : int =
+  meta.width
+
+proc height*(meta: RasterMetadata) : int =
+  meta.height
+
+proc bandCount*(meta: RasterMetadata): int =
+  meta.numBands
+
+proc bandColours*(meta: RasterMetadata) : seq[BandColour] =
+  meta.bandColours
+
+proc bitsPerPixel*(meta: RasterMetadata) : int =
+  meta.bitsPerPixel
+
+proc bytesPerPixel*(meta: RasterMetadata) : int =
+  meta.bytesPerPixel
+
+proc bandDataType*(meta: RasterMetadata) : RasterDataType =
+  meta.bandDataType
 
 type Raster* {. requiresInit .} = object 
   ## A raster image in memory.  This isn't designed to handle byte data loaded
@@ -432,12 +453,10 @@ proc readRaster*(map: Map,
   # => 19
   # = 11
 
-  let md = map.readRasterMetadata()
+  var md = map.readRasterMetadata()
   
   if md.numBands <= 0:
     raise newException(ValueError, "Map contains no raster");
-
-  result = initRaster(md, interleave)
 
   # read all bands or just the ones given?
   var readBands: seq[cint]
@@ -449,7 +468,12 @@ proc readRaster*(map: Map,
     readBands = newSeq[cint](bands.len)
     for b in 1 .. bands.len:
       readBands[b - 1] = b.cint
-  
+    echo "readBands = " & $readBands
+
+  # instantiate raster
+  result = initRaster(md.width, md.height, readBands.len, interleave, md.bandDataType)
+  echo "raster data len = " & $result.data.len
+
   # control how interleaving is done
   var nPixelSpace, nLineSpace, nBandSpace: cint
   case interleave

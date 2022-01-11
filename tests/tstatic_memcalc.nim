@@ -101,6 +101,8 @@ test "evaluate math procs: brightening with log10(A)":
   let expected = @[float64 -Inf, 2.103803720955957, 2.406540180433955]
   check dst == expected
 
+
+
 test "evaluate with destination offset":
   let vectors = {"A": @[0, 1, 2]}.toTable()
   var dst = newSeq[int](6)

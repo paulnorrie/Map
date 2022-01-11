@@ -47,10 +47,10 @@ proc readBlock[T](x, y: int,
   ## The block sizes must be the same for all rasters.  
   ## This can be determined by calling `commonBlockInfo`.
   ## 
-  ## `blockInfo` gives the size of the block in pixels to read.
+  ## `blockInfo` gives the size of the block in pixels to read.  If the block
+  ## is larger than the image bounds, only the image bounds are read.
   ## 
-  ## Each variable in `variables` identifies the Map to read followed by the
-  ## band, using the standard variable notation.    
+  ## T is band data type 
 
   # don't read beyond boundaries of band
   let meta = map.readRasterMetadata()
@@ -85,21 +85,21 @@ template calcBlock[D](expression: static[string],
   ## Calculate on block `x`,`y` of bands in `maps`, with each band having 
   ## type T and store the result in `dst`  
   
-  var vectors: Table[string, seq[T]]
+  var vectors =  initTable[string, seq[T]]()
   
   # read blocks for each variable
   for varIdent in varIdents.items():
    
-    # get the raster and band to read
+    # load vectors with the band data
     let varInfo = varIdent.parseImageAndBandId()
     let map = maps[varInfo.imageId]
     vectors[varIdent] = readBlock[T](x, y, blockInfo, map, varInfo.bandOrd)
 
-    offset = offset + vectors[varIdent].len 
-  
   # compute the calculation for the block
-  evaluateScalar(expression, vectors, dst, offset) # TODO: offset not yet supported
+  evaluateScalar(expression, vectors, dst, offset)
 
+  # increment offset for later (blockInfo may be larger than what is read)
+  #offset = offset + vectors[varIdent].len
 
 
 macro castRasterData(ident: untyped, raster: Raster, bandDataType: static[RasterDataType]) =
@@ -120,11 +120,12 @@ macro castRasterData(ident: untyped, raster: Raster, bandDataType: static[Raster
  
 
 
-proc calc*(expression: static[string], maps: TableRef[ImageIdType, Map], dst: Raster, dt: static[RasterDataType])  = #progress: Progress = NoProgress
+proc calc*(expression: static[string], maps: TableRef[char, Map], dst: Raster, dt: static[RasterDataType])  = #progress: Progress = NoProgress
   ## Calculate the result of `expression` referencing one or more Maps. 
   ## The result is stored in `dst` which has type `dt`.  `dt` is required
   ## to be known at compile-time and should match the bandDataType in `dst` or
-  ## it is undefined behaviour.
+  ## a RangeError may be raised if data is out of range. `dst` should be large
+  ## enough or an `IndexDefect` will be raised.
   ## 
   ## This function will load the rasters in `maps` block by block reducing
   ## memory needed at any one time.
@@ -139,7 +140,10 @@ proc calc*(expression: static[string], maps: TableRef[ImageIdType, Map], dst: Ra
   ## Each variable in `expression` must have a Map in `maps` or a KeyError
   ## is raised.
 
-  
+  if expression.isVector():
+    raise newException(ValueError, 
+                      "Expected expression to be scalar, but is vector.  " &
+                      "Add band ordinals to the variables.")
   
   # Determine the block size common to all rasters - if the rasters do not have
   # the same block sizes, use scanlines
@@ -181,12 +185,42 @@ proc calc*(expression: static[string], maps: TableRef[ImageIdType, Map], dst: Ra
 
 
 
+proc calc*(expression: static[string], maps: TableRef[char, Map], dt: static[RasterDataType]): Raster  = #progress: Progress = NoProgress
+  ## Calculate the result of `expression` referencing one or more Maps. 
+  ## The result is stored in `dst` which has type `dt`.  `dt` is required
+  ## to be known at compile-time and should match the bandDataType in `dst` or
+  ## a RangeError may be raised if data is out of range.
+  ## 
+  ## This function will load the rasters in `maps` block by block reducing
+  ## memory needed at any one time.
+  ## 
+  ## The Map instances in `rasterMaps` must contain raster, not vector, data or
+  ## a ValueError is raised. All rasters must be the same size or IndexDefect
+  ## is raised.  They must have the same datatype.
+  ## 
+  ## This function is fastest when the rasters are tiled with the same block size,
+  ## otherwise the rasters are read line by line.
+  ## 
+  ## Each variable in `expression` must have a Map in `maps` or a KeyError
+  ## is raised.
+
+  let meta = maps.getAnyValue().readRasterMetadata()
+  var dst = initRaster(meta.width, meta.height, 1, BIP, dt)  #(1, 1, 1, BIP, u8)
+  calc(expression, maps, dst, dt)
+  return dst  
+
+
+
 #roc calc*(`expression`: string, rasters: Table[string, Raster], dst: Raster) =
 # ## Calculate an expression referencing multiple rasters and return the result.
 # ## 
 # ## Rasters A..Z are provided in `rasters[0]..rasters[25]`, i.e. raster "B" is
 # ## `rasters[1]`.
-# ## red, background, background2
+
+#if expression.isVector():
+#    raise newException(ValueError, 
+#                      "Expected expression to be scalar, but is vector.  " &
+#                      "Add band ordinals to the variables.")
 # var dataType: RasterDataType = none
 # 
 # var vectors: Table[string, UnsafeSeq[uint8]] #TODO: data type at runtime
@@ -242,8 +276,10 @@ proc main() =
   maps['A'] = geomap.open("/Users/nozza/vinegap2/testimages/drone/bright.jpeg")
   maps['B'] = geomap.open("/Users/nozza/vinegap2/testimages/drone/bright_copy.jpeg")
   #maptest(maps)
-  let dst = initRaster(1, 1, 1, BIP, i8)
-  calc("A + B", maps, dst, i8)
+  expandMacros:
+    let dst = calc("A1 + B1", maps, u8)
+    echo dst.data.len
+  
 
   #let map = geomap.open("/Users/nozza/vinegap2/testimages/drone/bright.jpeg")
   #echo map.unsafeAddr.repr

@@ -26,7 +26,7 @@
 ## willWork(refTable)
 ## ```
 
-import gdal/[gdal, cpl, gdal_alg], strformat
+import gdal/[gdal, cpl, gdal_alg]
 
 # register all GDAL drivers before this can be used
 registerAll()
@@ -39,12 +39,14 @@ type
     xfGCP # use Ground Control Points
     
 
-  XformerObj* = object # Xformer can be one of XformerKind
+  XformerObj* = object 
+    ## Transforms between world and raster coordinates.
+    # Xformer can be one of XformerKind, and are read-only.
     case kind*: XformerKind
-    of xfRPC: rpc*: pointer
-    of xfAffine: affine*: array[6, float64]
-    of xfGCP: gcp*: pointer
-    of xfNone: n*: bool # boolean is never used - just a placeholder
+    of xfRPC: rpc: pointer
+    of xfAffine: affine: array[6, float64]
+    of xfGCP: gcp: pointer
+    of xfNone: n: bool # boolean is never used - just a placeholder
 
   Xformer* = ref XformerObj
 
@@ -57,14 +59,21 @@ type MapKind = enum
 # ends, it triggers the close which kills it.  So never make a copy of map
 
 type Map* = object
-  ## An image with geospatial data.  When OpenCV functions in this
-  ## module are applied to it, the geospatial data will adjust as
-  ## required.  E.g. applying a transform, will transform the
-  ## image and the geospatial data.
+  ## A reference to geospatial data stored in some raster or vector format.
   
+  # if the object is a copy of another Map, mark it as such in the `=copy`
+  # proc, so the the `=destroy` proc does not release GDAL pointers. Only
+  # non-copied objects should release GDAL pointers otherwise they will be
+  # invalid for other copies of the object.
+  isCopy: bool  
+
+  # ----------------------------------------------------------------
+  # IMPORTANT: when you add a field here, copy it in `=copy` as well
+  # ----------------------------------------------------------------
+
   hDs: Dataset not nil # pointer to GDAL Dataset
-  path: string
-  isCopy: bool
+  path: string         # path to the maps data source
+  
   case kind: MapKind 
   of mkRaster:
     xformer: Xformer  # transfomer for world to raster coordinates
@@ -81,22 +90,23 @@ proc path*(map: Map) : string =
   result = map.path
 
 proc `=destroy`(this: var Map) =
-  ## Destructor for Map
-  #echo "--"
-  #echo fmt"Destroying map at {this.unsafeAddr.repr}"
-  #echo "--"
-  if this.kind == mkRaster and this.xformer != nil:
-    case this.xformer.kind:
-    of xfGCP: 
-      GDALDestroyGCPTransformer(this.xformer.gcp)
-    of xfRPC: 
-      GDALDestroyRPCTransformer(this.xformer.rpc)
-    else : 
-      discard
-  
-  # close dataset if this is not a copy
-  if this.hDs != nil and not this.isCopy:
-    close(this.hDs)
+  ## Destructor for Map 
+  # only remove GDAL resources if this map is not a copy otherwise 
+  # pointers will be dangling and other copies GDAL calls will fail
+  # because the pointers are invalid.
+  if not this.isCopy:
+    if this.kind == mkRaster and this.xformer != nil:
+      case this.xformer.kind:
+      of xfGCP: 
+        GDALDestroyGCPTransformer(this.xformer.gcp)
+      of xfRPC: 
+        GDALDestroyRPCTransformer(this.xformer.rpc)
+      else : 
+        discard
+      
+    # close dataset if this is not a copy
+    if this.hDs != nil:
+      close(this.hDs)
 
 
 proc `=copy`(dst: var Map, src: Map) =
@@ -107,8 +117,18 @@ proc `=copy`(dst: var Map, src: Map) =
   if dst.path != src.path:
     `=destroy`(dst)
     wasMoved(dst)
+    
     dst.path = src.path
     dst.hDs = src.hDs
+    dst.kind = src.kind
+    case dst.kind:
+    of mkRaster:
+      dst.xformer = src.xformer
+    of mkVector:
+      dst.tbd = src.tbd
+
+    # mark new object as copy to prevent dangling pointers on its
+    # destruction
     dst.isCopy = true
   
 

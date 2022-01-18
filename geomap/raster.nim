@@ -133,6 +133,9 @@ type
          ## | y = 1 |   B   |   B   |
          ## +-------+-------+-------+
          ## 
+         ## This interleaving provides best performance for accessing parts of
+         ## a single band. 
+         ## 
          ## As a 3D array this is of shape [X, Y, Band]
          
     BIP = "BIP", ## Band Interleaved by Pixel.  BIP stores the raster each pixel at a
@@ -150,7 +153,11 @@ type
          ## | y = 1 | R | G | B | R | G | B |
          ## +-------+---+---+---+---+---+---+
          ## 
+         ## This interleaving provides best performance when reading pixels
+         ## containing all band values. 
+         ## 
          ## As a 3D array this is of the shape [Bands, X, Y]
+         ## 
     
     BIL = "BIL", ## Band Interleaved by Line. BIL stores the raster each row at a time.
          ## Each row has the band data written one after another. This is the
@@ -166,6 +173,7 @@ type
          ## +-------+-------+-------+-------+-------+-------+-------+
          ## | y = 1 |   R   |   R   |   G   |   G   |   B   |   B   |
          ## +-------+-------+-------+-------+-------+-------+-------+
+          
 
 
 type RasterMetadata* {.requiresinit.} = object 
@@ -416,7 +424,7 @@ proc readRasterMetadata*(map: Map): RasterMetadata =
 proc readRaster*(map: Map, 
                 interleave: Interleave = BIP, 
                 x, y, width, height: int = 0,
-                bands: openarray[ValidBandOrdinal]): Raster = 
+                bands: openarray[ValidBandOrdinal] = @[]): Raster = 
   ## Read a raster of a Map into memory.  It is stored in the format defined
   ## by `interleave` in left-to-right, top-to-bottom order.  Bands are
   ## in the same order as the image and you may use the returned rasters
@@ -447,31 +455,28 @@ proc readRaster*(map: Map,
   ## 16 bits per pixel.
   ## 
   
-  # CxHxW of (3,1,1) [c][w][h] = c + w * CHANNEL + (h * CHANNEL * WIDTH)
-  # => 3 + 1 * 4 + (1 * 4 * 3)
-  # => 3 + 4 + 12
-  # => 19
-  # = 11
-
   var md = map.readRasterMetadata()
   
   if md.numBands <= 0:
     raise newException(ValueError, "Map contains no raster");
 
   # read all bands or just the ones given?
-  var readBands: seq[cint]
+  var bandCount: seq[cint]
   if bands.len == 0:
-    readBands = newSeq[cint](md.numBands)
+    bandCount = newSeq[cint](md.numBands)
     for b in 1..md.numBands:
-      readBands[b - 1] = b.cint
+      bandCount[b - 1] = b.cint
   else:
-    readBands = newSeq[cint](bands.len)
+    bandCount = newSeq[cint](bands.len)
     for b in 1 .. bands.len:
-      readBands[b - 1] = b.cint
+      bandCount[b - 1] = b.cint
 
-  # instantiate raster
-  result = initRaster(md.width, md.height, readBands.len, interleave, md.bandDataType)
-
+  # read entire image or just width and height as specified
+  var xSize = width
+  var ySize = height
+  if width == 0: xSize = md.width
+  if height == 0: ySize = md.height
+  
   # control how interleaving is done
   var nPixelSpace, nLineSpace, nBandSpace: cint
   case interleave
@@ -481,39 +486,56 @@ proc readRaster*(map: Map,
     nBandSpace = 0  # GDAL default
   of BIP:
     nPixelSpace = md.bytesPerPixel.cint
-    nLineSpace = (md.bytesPerPixel * md.width).cint
+    nLineSpace = (md.bytesPerPixel * xSize).cint
     nBandSpace = bytesForDataType(md.bandDataType).cint
   of BIL:
-    nPixelSpace = bytesForDataType(md.bandDataType).cint
-    nLineSpace = (md.bytesPerPixel.cint * md.width).cint
-    nBandSpace = nPixelSpace
+    raise newException(ValueError, "BIL unsupported")
   
-  # read entire image or just width and height as specified
-  var readWidth = width
-  var readHeight = height
-  if width == 0: readWidth = md.width
-  if height == 0: readHeight = md.height
+  # instantiate raster
+  result = initRaster(xSize, ySize, bandCount.len, interleave, md.bandDataType)
 
-  # read into memory in requested interleaving
+  var extra = GDALRasterIOExtraArg(
+    nVersion: 1,
+    eResampleArg: GRIORA_Lanczos,
+    pfnProgress: nil,
+    pProgressData: nil,
+    bFloatingPointWindowValidity: 1,
+    dfXOff: x.cdouble,
+    dfYOff: y.cdouble,
+    dfXSize: xSize.cdouble,
+    dfYSize: ySize.cdouble
+  )
+
+  # read into memory with requested interleaving
   let success = GDALDatasetRasterIOEx(
                 map.dataset,
                 GF_Read,
-                x.cint,
-                y.cint,
-                readWidth.cint, readHeight.cint, # width, height
-                result.data[0].addr,     # data is read into this memory
-                readWidth.cint, readHeight.cint, # 1:1 (no overviews/scaling)
-                md.bandDataType,    # target data type of a individual band value
-                readBands.len.cint,   # number of bands to read 
-                readBands[0].addr,  # bands to read
+                x.cint, y.cint,         # start reading at x, y offset
+                xSize.cint, ySize.cint, # read this width, height
+                result.data[0].addr,    # data is read into this memory
+                xSize.cint, ySize.cint, # scale 1:1 (no overviews/scaling)
+                md.bandDataType,        # target data type of a individual band value
+                bandCount.len.cint,     # number of bands to read 
+                bandCount[0].addr,      # which bands to read
                 nPixelSpace,        # bytes from one pixel to the next pixel in 
-                                    # the scanline = dt (i.e. pixel interleaved)
+                                    # the scanline 
                 nLineSpace,         # bytes from start of one scanline to the
-                                    # next = dt * nBufXSize (i.e pixel interleaved)
-                nBandSpace,
-                nil)                # TODO: progress callback
+                                    # next 
+                nBandSpace,         # bytes between bands
+                addr extra)                
   if success != CE_None:
     raise newException(IOError, $CPLGetLastErrorMsg())
+
+
+#proc readRaster*(map: Map, 
+#                interleave: Interleave = BIP, 
+#                x, y, width, height: int): Raster = 
+#  map.readRaster(interleave, x, y, width, height, [])
+
+
+
+
+
 
 
 proc readRaster*(map: Map, 
@@ -602,6 +624,62 @@ proc blockInfo*(map: Map) : BlockInfo =
 
   return blocks
 
+
+  
+
+proc bandValue*[T](raster: Raster, bandOrd: int, x: int, y: int) : T =
+  
+  case raster.interleave:
+  of BIP:
+    result = cast[T](
+            (bandOrd - 1) + x * raster.meta.bandCount + # 1 + 3 +
+            (y * raster.meta.bandCount * raster.meta.width) # (1 * 3 * 2)
+            )
+    echo result #9
+    echo bandOrd #1
+    echo x # 1
+    echo raster.meta.bandCount #3
+    echo y # 1
+    echo raster.meta.width # 2
+  of BSQ:
+    result = cast[T](
+            bandOrd * raster.meta.width * raster.meta.height +
+            (y * raster.meta.width) + x
+            )
+  of BIL:
+    result = cast[T](
+            ((bandOrd - 1) * raster.meta.width + x) *
+            (y * raster.meta.bandCount * raster.meta.width)
+            )
+
+
+
+proc pixelsAs3Bands*[T](raster: Raster, startX: int, startY: int, width: int, height: int) : seq[seq[(T,T,T)]] =
+  let resultWidth = min(width, raster.width - startX)
+  result = newSeqUninitialized[seq[(T, T, T)]](resultWidth)
+
+  let resultHeight = max(height, raster.meta.height - startY)
+  
+  for x in startX..<startX + resultWidth:
+    result[x] = newSeqUninitialized[(T, T, T)](resultHeight)
+    for y in startY..<startY + resultHeight:  
+      let val1 = raster.bandValue(1, x, y) # TODO: better to read band as 3 values as allows for CPU caching.
+      let val2 = raster.bandValue(2 x, y)
+      let val3 = raster.bandValue(3 x, y)
+      result[x][y] = (val1, val2, val3)
+
+# @[
+#   @[(r, g, b), (r, g, b), (r, g, b)],   # x = 0
+#   @[(r, g, b), (r, g, b), (r, g, b)]    # x = 1
+#   @[(r, g, b), (r, g, b), (r, g, b)]    # x = 2
+# ]
+
+  
+# @[
+#   @[0x445566, 0x112233],
+#
+#
+#
 
 
 

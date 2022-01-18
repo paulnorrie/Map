@@ -183,11 +183,11 @@ type GDALRasterIOExtraArg* = object
   eResampleArg*: GDALRIOResampleAlg
   pfnProgress*: GDALProgressFunc
   pProgressData*: pointer
-  bFloatingPointWindowValidity: cint
-  dfXOff: cdouble
-  dfYOff: cdouble
-  dfXSize: cdouble
-  dfYSize: cdouble
+  bFloatingPointWindowValidity*: cint
+  dfXOff*: cdouble
+  dfYOff*: cdouble
+  dfXSize*: cdouble
+  dfYSize*: cdouble
 
 type GDALColorInterp* {.size: sizeof(cint).} = enum
   GCI_Undefined = 0
@@ -693,8 +693,8 @@ proc project*(g, p: Geometry): float =
     ctx = initGEOS()
     gwkt = g.wkt()
     pwkt = p.wkt()
-    gg = ctx.fromWKT(gwkt)
-    gp = ctx.fromWKT(pwkt)
+    gg = ctx.fromWKT(gwkt.cstring)
+    gp = ctx.fromWKT(pwkt.cstring)
   result = ctx.Project(gg, gp)
   ctx.finishGEOS()
 

@@ -41,7 +41,7 @@
 ## 
 ## 
   
-import std/tables, std/macros, sets, strformat, typetraits
+import std/[tables, macros, sets, strformat, typetraits, strutils]
 import expressions
 
 type 
@@ -86,7 +86,7 @@ proc getSingleGenericType(node: NimNode) : string =
   case result
     of "array": result = getTypeInst(node)[2].repr
     of "seq": result = getTypeInst(node)[1].repr
-    else: raise newException(ValueError, fmt"Unandled type {result} of 'node'")
+    else: raise newException(ValueError, fmt"Unsupported type {result} of 'node'")
 
 proc getSourceGenericType(node: NimNode) : string = 
   ## String representation of a variable identifier that contains two generic types
@@ -94,11 +94,10 @@ proc getSourceGenericType(node: NimNode) : string =
   let base = getTypeInst(node)[0].repr
   case base
     of "Table": result = getTypeInst(node)[2][1].repr
-    else: raise newException(ValueError, fmt"Unandled type {result} of 'node'")
+    else: raise newException(ValueError, fmt"Unsupported type {result} of 'node'")
 
 
-
-macro genEvaluateBody[S, D](
+macro genEvaluateBody*[S, D](
   expression: static[string],
   vectors: Table[string, ArrayLike[S]], #seq[T | SomeNumber]],
   dst: var openarray[D | SomeNumber],
@@ -186,11 +185,13 @@ macro genEvaluateBody[S, D](
         ident "i")                                #           Ident "i"
     )
     autoVecLoopBody.add(asgn)  
+  
   let dstTypeString = getSingleGenericType(dst)
+
   autoVecLoopBody.add(
     newAssignment(                                #       Asgn
       newNimNode(nnkBracketExpr).add(             #         BracketExpr
-        ident dst.strVal,                         #           Ident "dst"
+        dst,
         newNimNode(nnkInfix).add(                 #            Infix
           ident "+",                              #             Ident "+"
           ident "i",                              #             Ident "i"

@@ -35,12 +35,11 @@
 ## stores the result in the first band of the second image
 ## - `A = 10 * (A / 10)` 
 import geomap, raster, private/[static_mapcalc, expressions]
-import std/tables, std/sets, std/strformat
+import std/tables, std/sets
 
 
-proc calc*(expression: static[string], 
-          maps: TableRef[char, Map], 
-          dt: static[RasterDataType]): Raster  = 
+proc calc*[T](expression: static[string], 
+          maps: TableRef[char, Map]): Raster[T]  = 
   ## Calculate the result of a scalar `expression` referencing one or more Maps. 
   ## This function, loads the rasters of each `Map` block by block reducing
   ## memory requirements.  
@@ -54,9 +53,9 @@ proc calc*(expression: static[string],
   ## a ValueError is raised. All rasters must be the same size or IndexDefect
   ## is raised.  They must have the same datatype.
   
-  return staticCalc(expression, maps, dt)
+  return staticCalc[T](expression, maps)
 
-proc calc*(map: Map, expression: static[string], dt: static[RasterDataType]): Raster = 
+proc calc*[T](map: Map, expression: static[string]): Raster[T] = 
 
   let varIdents = findVarIdents(expression)
   let varCount = varIdents.len
@@ -65,4 +64,4 @@ proc calc*(map: Map, expression: static[string], dt: static[RasterDataType]): Ra
   let anyVarIdent = varIdents.getAnyValue()
   let imageId = parseImageId(anyVarIdent)
   let maps = {imageId: map}.newTable()
-  return calc(expression, maps, dt)
+  return calc[T](expression, maps)

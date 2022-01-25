@@ -1,21 +1,26 @@
 import std/[unittest]
-import geomap/geomap, geomap/raster
+import geomap/[geomap, raster]
+import geomap/gdal/gdal
+
+#proc doit[T](map: Map) : Raster[T] =
+#  result = initRaster[byte](1, 1, 1, BIP, u8)
+
 
 test "readRaster beyond bounds raises IOError":
   let map = geomap.open("testdata/geoRGB.tiff")
       
   expect IOError:
     # x, y out of bounds
-    discard map.readRaster(BIP, x = 200, y = 200, width = 1, height = 1, [])
+    discard map.readRaster[:int32](BIP, x = 200, y = 200, width = 1, height = 1, [])
   
   expect IOError:
     # x, y in bounds but x+width, y+height are not
-    discard map.readRaster(BIP, x = 1, y = 1, width = 100, height = 100, [])
+    discard map.readRaster[:int32](BIP, x = 1, y = 1, width = 100, height = 100, [])
 
 
 test "readRaster with BIP interleaving":
   let map = geomap.open("testdata/twoXtwo.tiff")
-  let raster = map.readRaster(BIP)
+  let raster = map.readRaster[:byte](BIP)
   check raster.meta.height == 2
   check raster.meta.width == 2
   check raster.interleave == BIP
@@ -26,10 +31,9 @@ test "readRaster with BIP interleaving":
   check raster.data == expectedData
 
 
-
 test "readRaster with BSQ interleaving":
   let map = geomap.open("testdata/twoXtwo.tiff")
-  let raster = map.readRaster(BSQ)
+  let raster = map.readRaster[:byte](BSQ)
   check raster.meta.height == 2
   check raster.meta.width == 2
   check raster.interleave == BSQ
@@ -42,7 +46,7 @@ test "readRaster with BSQ interleaving":
 
 test "readRaster with bounds returns only that section (BSQ)":
   let map = geomap.open("testdata/geoRGB.tiff")
-  let raster = map.readRaster(BSQ, x = 0, y = 0, width = 2, height = 2)
+  let raster = map.readRaster[:byte](BSQ, x = 0, y = 0, width = 2, height = 2)
   check raster.meta.height == 2
   check raster.meta.width == 2
   check raster.meta.bandCount == 3
@@ -56,7 +60,7 @@ test "readRaster with bounds returns only that section (BSQ)":
 
 test "readRaster with bounds returns only that section (BIP)":
   let map = geomap.open("testdata/geoRGB.tiff")
-  let raster = map.readRaster(BIP, x = 1, y = 2, width = 2, height = 2)
+  let raster = map.readRaster[:byte](BIP, x = 1, y = 2, width = 2, height = 2)
   check raster.meta.height == 2
   check raster.meta.width == 2
   check raster.meta.bandCount == 3
@@ -66,12 +70,15 @@ test "readRaster with bounds returns only that section (BIP)":
   let expectedData = @[byte 116, 123, 131, 91, 94, 102, 91, 90, 98, 93, 86, 97]
   check raster.data == expectedData
 
+test "readRaster converting floating point raster to int32 image":
+  let map = geomap.open("testdata/Chloraphyll.tiff")
+  var raster = map.readRaster[:int32](BIP, x = 100, y = 100, width = 2, height = 2)
+  let expectedData = @[int32 0, 9, 1, 2] 
+  check raster.data == expectedData
+
 #test "bandValue with BIP image":
 #  let map = geomap.open("testdata/geoRGB.tiff")
 #  let raster = map.readRaster(BIP, x = 0, y = 0, width = 10, height = 2)
-#  let actual = bandValue[uint8](raster, 1, 1, 1)
+#  let actual = bandValue[:byte](raster, 1, 1, 1)
 #  echo raster.data
 #  check actual == 91
-  
-
-

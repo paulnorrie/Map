@@ -14,7 +14,7 @@ import math, strformat
 runnableExamples:
   import geomap, raster
   let map = geomap.open("image.tif")    # open the Map
-  let raster = map.readRaster()       
+  let raster = map.readRaster[:byte]()  # or readRaster[byte](map)   
   echo raster.data[0]                   # this is the first byte
   echo raster.meta.width
 ## You can just read the metadata, without loading any of the raster into 
@@ -28,7 +28,7 @@ runnableExamples:
 ## Create a new raster by calling `initRaster <#int,int,int,RasterMetadata>`_
 runnableExamples:
   # create a 1 pixel RGB grey image
-  let raster = initRaster(width = 1, height = 1, 
+  let raster = initRaster[byte](width = 1, height = 1, 
     bandCount = 3, interleave = BIP, bandDataType = i8)
   raster.rasterData[0] = 0x77 # red
   raster.rasterData[1] = 0x77 # green
@@ -227,13 +227,13 @@ proc bytesPerPixel*(meta: RasterMetadata) : int =
 proc bandDataType*(meta: RasterMetadata) : RasterDataType =
   meta.bandDataType
 
-type Raster* {. requiresInit .} = object 
+type Raster*[T] {. requiresInit .} = object 
   ## A raster image in memory.  This isn't designed to handle byte data loaded
   ## by other libraries or code because it doesn't handle non-byte aligned
   ## band data (e.g. RGB565) and much of the calc methods require metadata
   ## to be there.
-  data*: seq[byte]  ## The raster data as bytes, formatted according to
-                    ## `interleave`
+  data*: seq[T]  ## The raster data formatted according to
+                 ## `interleave`
   
   interleave*: Interleave ## the interleaving format of `data` in memory. 
   
@@ -285,6 +285,17 @@ converter toGDALDataType(dt: RasterDataType) : GDALDataType =
   of f32: return GDT_Float32
   of f64: return GDT_Float64
   else: return GDT_Unknown    
+
+converter toRasterDataType(dt: typedesc) : RasterDataType =
+  case dt:
+  of byte: return u8
+  of int8: return i8
+  of uint16: return u16
+  of int16: return i16
+  of uint32: return u32
+  of int32: return i32
+  of float32: return f32
+  of float64: return f64
 
 converter toNimTypeStr*(dt: RasterDataType) : string =
   ## implicity converts RasterDataType to a Nim type string description
@@ -364,36 +375,71 @@ proc initRasterMetadata(width, height, bandCount: int, bandDataType: RasterDataT
 
 
 
-proc initRaster(md: RasterMetadata, interleave: Interleave) : Raster =
-  ## Initialise a blank Raster with metadata and interleaving.  The returned
-  ## Raster will have a sequence suitable to hold
-  let dataLen = md.width * md.height * md.bytesPerPixel
-  result = Raster(data: newSeqUninitialized[byte](dataLen),
+proc initRaster[T](md: RasterMetadata, interleave: Interleave) : Raster[T] =
+  ## Initialise a blank Raster with metadata and interleaving, holding band
+  ## data as type seq[T]
+  let dataLen = md.width * md.height * md.bandCount
+  result = Raster[T](data: newSeqUninitialized[T](dataLen),
                   interleave: interleave,
                   meta: md)
 
 
 
-proc initRaster*(width, height, bandCount: int, 
-                 interleave: Interleave, 
-                 bandDataType: RasterDataType): Raster =
+proc initRaster*[T](width, height, bandCount: int, 
+                 interleave: Interleave): Raster[T] =
   ## Create a blank raster.  At the return of this call, the raster is able
   ## to have the `rasterData` field assigned to.
   runnableExamples:
-    let rgbRaster = initRaster(256, 256, 3, BIP, int8)
+    let rgbRaster = initRaster[byte](256, 256, 3, BIP)
     for i in countUp(0, 256, step = 3):
       rgbRaster.rasterData[i] = i
       rgbRaster.rasterData[i + 1] = i
       rgbRaster.rasterData[i + 2] = i
   
   # metadata
-  var md = initRasterMetadata(width, height, bandCount, bandDataType)
+  
+  when T is byte:
+    var md = initRasterMetadata(width, height, bandCount, u8)
+    result = initRaster[T](md, interleave)
+  elif T is int8:
+    var md = initRasterMetadata(width, height, bandCount, i8)
+    result = initRaster[T](md, interleave)
+  elif T is uint16:
+    var md = initRasterMetadata(width, height, bandCount, u16)
+    result = initRaster[T](md, interleave)
+  elif T is int16:
+    var md = initRasterMetadata(width, height, bandCount, i16)
+    result = initRaster[T](md, interleave)
+  elif T is uint32:
+    var md = initRasterMetadata(width, height, bandCount, u32)
+    result = initRaster[T](md, interleave)
+  elif T is int32:
+    var md = initRasterMetadata(width, height, bandCount, i32)
+    result = initRaster[T](md, interleave)
+  elif T is float32:
+    var md = initRasterMetadata(width, height, bandCount, f32)
+    result = initRaster[T](md, interleave)
+  elif T is float64:
+    var md = initRasterMetadata(width, height, bandCount, f64)
+    result = initRaster[T](md, interleave)
+  elif T is int:
+    when sizeof(int) == 32:
+      var md = initRasterMetadata(width, height, bandCount, i32)
+      result = initRaster[T](md, interleave)
+    else:
+      {.error: "Signed-integers may only be int8, int16, int32 for generic type T of initRaster.".}
+  elif T is uint:
+    when sizeof(int) == 32:
+      var md = initRasterMetadata(width, height, bandCount, u32)
+      result = initRaster[T](md, interleave)
+    else:
+      {.error: "Unsigned-integers may only be uint8, uint16, uint32 for generic type T of initRaster.".}
+  else:
+    {.error: "Unsupported generic type T for initRaster. ".}
 
-  result = initRaster(md, interleave)
-  #let rasterDataSize = (width * height * bytesPerPixel).uint
-  #var raster = Raster(rasterDataSize: rasterDataSize)
-  #raster.rasterData = createU(byte, rasterDataSize) # dealloced in destructor   #TODO: UnsafeSeq[byte]?
-  #raster.interleave = interleave
+  #var md = initRasterMetadata(width, height, bandCount, T)
+  
+
 
 
 func getBandColours(hDs: Dataset) : seq[BandColour] = 
@@ -421,17 +467,22 @@ proc readRasterMetadata*(map: Map): RasterMetadata =
 
 
 
-proc readRaster*(map: Map, 
+proc readRaster*[T](map: Map, 
                 interleave: Interleave = BIP, 
                 x, y, width, height: int = 0,
-                bands: openarray[ValidBandOrdinal] = @[]): Raster = 
+                bands: openarray[ValidBandOrdinal] = @[]): Raster[T] = 
   ## Read a raster of a Map into memory.  It is stored in the format defined
   ## by `interleave` in left-to-right, top-to-bottom order.  Bands are
   ## in the same order as the image and you may use the returned rasters
   ## `meta.bandColours` field to determine
   ## the colour components each band represents and the order of them.
   ## 
-  ## If the Map has no raster data, a ValueError is thrown.
+  ## The raster data will be allocated as type `T` which is the type of a
+  ## bands value (not a pixels value).  If the raster to be read is of a 
+  ## different data type, the raster will be converted as it is read.  Floating
+  ## point rasters represented as integers will be rounded.  If a value in the
+  ## raster is larger or smaller than type `T` can hold, the minimum or maximum
+  ## of `T` is used.
   ## 
   ## To read only a portion of a raster, specify the rectangle to read by 
   ## passing `x`, `y`, `width`, and `height` pixel coordinates of the rectangle.
@@ -444,6 +495,8 @@ proc readRaster*(map: Map,
   ## If `bands` is empty, all bands are read. Otherwise the bands given in
   ## `bands` will be read.  Bands start from 1.  A ValueError is thrown if
   ## more bands are given than in the raster.
+  ## 
+  ## If the Map has no raster data, a ValueError is thrown.
   ## 
   ## **Images with different band bit lengths**
   ## 
@@ -492,19 +545,7 @@ proc readRaster*(map: Map,
     raise newException(ValueError, "BIL unsupported")
   
   # instantiate raster
-  result = initRaster(xSize, ySize, bandCount.len, interleave, md.bandDataType)
-
-  var extra = GDALRasterIOExtraArg(
-    nVersion: 1,
-    eResampleArg: GRIORA_Lanczos,
-    pfnProgress: nil,
-    pProgressData: nil,
-    bFloatingPointWindowValidity: 1,
-    dfXOff: x.cdouble,
-    dfYOff: y.cdouble,
-    dfXSize: xSize.cdouble,
-    dfYSize: ySize.cdouble
-  )
+  result = initRaster[T](xSize, ySize, bandCount.len, interleave)
 
   # read into memory with requested interleaving
   let success = GDALDatasetRasterIOEx(
@@ -514,7 +555,7 @@ proc readRaster*(map: Map,
                 xSize.cint, ySize.cint, # read this width, height
                 result.data[0].addr,    # data is read into this memory
                 xSize.cint, ySize.cint, # scale 1:1 (no overviews/scaling)
-                md.bandDataType,        # target data type of a individual band value
+                result.meta.bandDataType.toGDALDataType, # target data type of a individual band value
                 bandCount.len.cint,     # number of bands to read 
                 bandCount[0].addr,      # which bands to read
                 nPixelSpace,        # bytes from one pixel to the next pixel in 
@@ -522,7 +563,7 @@ proc readRaster*(map: Map,
                 nLineSpace,         # bytes from start of one scanline to the
                                     # next 
                 nBandSpace,         # bytes between bands
-                addr extra)                
+                nil)                
   if success != CE_None:
     raise newException(IOError, $CPLGetLastErrorMsg())
 
@@ -538,9 +579,9 @@ proc readRaster*(map: Map,
 
 
 
-proc readRaster*(map: Map, 
+proc readRaster*[T](map: Map, 
                 interleave: Interleave = BIP, 
-                bands: openarray[ValidBandOrdinal]): Raster = 
+                bands: openarray[ValidBandOrdinal]): Raster[T] = 
   ## Read a raster of a Map into memory.  It is stored in the format defined
   ## by `interleave` in left-to-right, top-to-bottom order.  Bands are
   ## in the same order as the image and you may use the returned rasters
@@ -561,14 +602,14 @@ proc readRaster*(map: Map,
   ## length. E.g. RGB565 format (5 bits red, 6 bits green, 5 bits blue), common
   ## in embedded systems and cameras, will become 24 bits per pixel instead of
   ## 16 bits per pixel.
-  readRaster(map, interleave, 0, 0, 0, 0, bands)
+  readRaster[T](map, interleave, 0, 0, 0, 0, bands)
   
-proc readBand*(map: Map,
+proc readBand*[T](map: Map,
               bandOrdinal: ValidBandOrdinal,
               x: int = 0, 
               y: int = 0, 
               width: int = 0, 
-              height: int = 0) : Raster =
+              height: int = 0) : Raster[T] =
   ## Read a single band of a raster into memory.
   ## 
   ## To read only a portion of a band, specify the rectangle to read by 
@@ -591,7 +632,7 @@ proc readBand*(map: Map,
   ## length. E.g. RGB565 format (5 bits red, 6 bits green, 5 bits blue), common
   ## in embedded systems and cameras, will become 24 bits per pixel instead of
   ## 16 bits per pixel.
-  readRaster(map, BIP, x, y, width, height, @[bandOrdinal])
+  readRaster[T](map, BSQ, x, y, width, height, @[bandOrdinal])
   
 
 
@@ -627,49 +668,58 @@ proc blockInfo*(map: Map) : BlockInfo =
 
   
 
-proc bandValue*[T](raster: Raster, bandOrd: int, x: int, y: int) : T =
-  
-  case raster.interleave:
-  of BIP:
-    result = cast[T](
-            (bandOrd - 1) + x * raster.meta.bandCount + # 1 + 3 +
-            (y * raster.meta.bandCount * raster.meta.width) # (1 * 3 * 2)
-            )
-    echo result #9
-    echo bandOrd #1
-    echo x # 1
-    echo raster.meta.bandCount #3
-    echo y # 1
-    echo raster.meta.width # 2
-  of BSQ:
-    result = cast[T](
-            bandOrd * raster.meta.width * raster.meta.height +
-            (y * raster.meta.width) + x
-            )
-  of BIL:
-    result = cast[T](
-            ((bandOrd - 1) * raster.meta.width + x) *
-            (y * raster.meta.bandCount * raster.meta.width)
-            )
+#proc bandValue*[T](raster: Raster, bandOrd: int, x: int, y: int) : T =
+#  
+#  case raster.interleave:
+#  of BIP:
+#    result = cast[T](
+#            (bandOrd - 1) + x * raster.meta.bandCount + # 1 + 3 +
+#            (y * raster.meta.bandCount * raster.meta.width) # (1 * 3 * 2)
+#            )
+#    echo result #9
+#    echo bandOrd #1
+#    echo x # 1
+#    echo raster.meta.bandCount #3
+#    echo y # 1
+#    echo raster.meta.width # 2
+#  of BSQ:
+#    result = cast[T](
+#            bandOrd * raster.meta.width * raster.meta.height +
+#            (y * raster.meta.width) + x
+#            )
+#  of BIL:
+#    result = cast[T](
+#            ((bandOrd - 1) * raster.meta.width + x) *
+#            (y * raster.meta.bandCount * raster.meta.width)
+#            )
 
 
 
-proc pixelsAs3Bands*[T](raster: Raster, startX: int, startY: int, width: int, height: int) : seq[seq[(T,T,T)]] =
-  let resultWidth = min(width, raster.width - startX)
-  result = newSeqUninitialized[seq[(T, T, T)]](resultWidth)
-
-  let resultHeight = max(height, raster.meta.height - startY)
-  
-  for x in startX..<startX + resultWidth:
-    result[x] = newSeqUninitialized[(T, T, T)](resultHeight)
-    for y in startY..<startY + resultHeight:  
-      let val1 = raster.bandValue(1, x, y) # TODO: better to read band as 3 values as allows for CPU caching.
-      let val2 = raster.bandValue(2 x, y)
-      let val3 = raster.bandValue(3 x, y)
-      result[x][y] = (val1, val2, val3)
+#proc pixels*[T](raster: Raster, startX: int, startY: int, width: int, height: int) : seq[seq[seq[T]]] =
+#  ## Read pixel values from a section of a raster.
+#  ## This performs faster when the raster uses BIP interleaving.
+#  ## 
+#  ## The result is a multi-dimensional sequence of the format [width][height][band].
+#  let resultWidth = min(width, raster.width - startX)
+#  result = newSeqUninitialized[seq[(T, T, T)]](resultWidth)
+#
+#  let resultHeight = max(height, raster.meta.height - startY)
+#  
+#  for x in startX..<startX + resultWidth:
+#    result[x] = newSeqUninitialized[(T, T, T)](resultHeight)
+#    for y in startY..<startY + resultHeight:  
+#      case raster.interleave:
+#      of BIP:
+#        # check slice does not copy
+#        let start = (bandOrd - 1) + x * raster.meta.bandCount + 
+#                    (y * raster.meta.bandCount * raster.meta.width)
+#      result[x][y] = raster.bandValueAs3(x, y) # TODO: better to read band as 3 values as allows for CPU caching.
+#      let val2 = raster.bandValue(2 x, y)
+#      let val3 = raster.bandValue(3 x, y)
+#      result[x][y] = (val1, val2, val3)
 
 # @[
-#   @[(r, g, b), (r, g, b), (r, g, b)],   # x = 0
+#   @[@[r, g, b], (r, g, b), (r, g, b)],   # x = 0
 #   @[(r, g, b), (r, g, b), (r, g, b)]    # x = 1
 #   @[(r, g, b), (r, g, b), (r, g, b)]    # x = 2
 # ]

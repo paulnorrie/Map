@@ -120,7 +120,6 @@ proc `=copy`(dst: var Map, src: Map) =
     
     dst.path = src.path
     dst.hDs = src.hDs
-    dst.kind = src.kind
     case dst.kind:
     of mkRaster:
       dst.xformer = src.xformer

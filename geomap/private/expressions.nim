@@ -1,15 +1,8 @@
 ## Parsing calculation expressions
 ##
-## Call `bindToBands(expr)`to get an `ExprInfo` object which you can interrogate
-## by calling other procedures.
-## 
-## Limitations:
-##    
-## - No more than 26 images are supported (images A-Z)
-## - No image with more than 65,535 bands is supported
 
 import tables, typetraits, sets, strutils, strformat
-import calctypes, raster
+import ../raster
 
 template toSet*(iter: untyped): untyped =
   ## Returns a built-in set from the elements of the iterable `iter`.
@@ -27,83 +20,83 @@ template toSet*(iter: untyped): untyped =
   result
 
 
-type        
-    VarInfo* = object
-        ## Information about an (expanded) variable in an expression.
-        ## Expanded variables always have a band ordinal
-        ident*: string
-            ## the identifier of the variable (e.g. A1, B)
-        imageOrd*: uint8
-            ## the index of the image data this variable is bound to
-        imageId*: char
-            ## the identifier of the image only without the band
-        bandOrd*: BandOrdinalType
-            ## the band ordinal of this variable
+#type        
+#    VarInfo* = object
+#        ## Information about an (expanded) variable in an expression.
+#        ## Expanded variables always have a band ordinal
+#        ident*: string
+#            ## the identifier of the variable (e.g. A1, B)
+#        imageOrd*: uint8
+#            ## the index of the image data this variable is bound to
+#        imageId*: char
+#            ## the identifier of the image only without the band
+#        bandOrd*: BandOrdinalType
+#            ## the band ordinal of this variable#
 
-    ExprInfo* = object
-        ## Information about an assignment sexpression
-        exprRepr*: string
-            ## the expression represented as a string
-        vector: bool
-        imageOrds: set[uint8]
-        imageIdents: set[char]
-        bandOrdsForImage: Table[uint8, set[BandOrdinalType]]
-        vars: seq[VarInfo]
-
-
-
-proc addImage(info: var ExprInfo, imageOrd: uint8, imageId: char) =
-    ## Adds an Image ordinal and id to ExprInfo
-    info.imageOrds.incl(imageOrd)
-    info.imageIdents.incl(imageId)
-    discard info.bandOrdsForImage.hasKeyOrPut(imageOrd, {})
-
-
-
-proc imageIds*(info: ExprInfo): set[ImageIdType] {.inline.} =
-    ## What are the identifiers of the images used in an expression. 
-    ## The expression is previously parsed by `parse`.
-    ## 
-    ## E.g. for the expression `A1 + B1` īmageIds` returns `['A', 'B']`
-    return info.imageIdents
-
-
-
-proc imageOrdinals*(info: ExprInfo): set[uint8] {.inline.} =
-    ## What are the ordinals of the images used in an expression. 
-    ## The expression is previously parsed by `parse`.
-    ## 
-    ## E.g. for the expression `A1 + B1` `imageOrdinals` returns `[0, 1]`
-    return info.imageOrds
-
-
-
-proc bandOrdinalsFor*(info: ExprInfo, imageOrdinal: uint8): set[BandOrdinalType] {.inline.} =
-    ## What are the ordinals of the bands of an image used in an expression.
-    ## The expression is previously parsed by `parse`.
-    ## 
-    ## E.g. for the expression A1 + A2 / B3 + B4` `bandOrdinalsFor(1)` 
-    ## returns `[3, 4]`
-    return info.bandOrdsForImage[imageOrdinal]
-    
-
-
-proc variables*(info: ExprInfo): seq[VarInfo] {.inline.} =
-    ## The identifiers of the variables in an expression.
-    ## The expression is previously parsed by `parse`.
-    return info.vars
-
-
-proc isScalar*(info: ExprInfo): bool {.inline.} =
-    ## The expression in `info` is scalar if all variables specify a band
-    ## e.g. "A1 + A2 / B1 + B2" is scalar while "A / 2" is not.
-    return not info.vector
-
-proc isVector*(info: ExprInfo): bool {.inline.} =
-    ## The expression in `info` is vector if at least one variable specifies
-    ## all bands
-    ## e.g. "A / 3" is a vector expression
-    return info.vector
+#    ExprInfo* = object
+#        ## Information about an assignment sexpression
+#        exprRepr*: string
+#            ## the expression represented as a string
+#        vector: bool
+#        imageOrds: set[uint8]
+#        imageIdents: set[char]
+#        bandOrdsForImage: Table[uint8, set[BandOrdinalType]]
+#        vars: seq[VarInfo]
+#
+#
+#
+#proc addImage(info: var ExprInfo, imageOrd: uint8, imageId: char) =
+#    ## Adds an Image ordinal and id to ExprInfo
+#    info.imageOrds.incl(imageOrd)
+#    info.imageIdents.incl(imageId)
+#    discard info.bandOrdsForImage.hasKeyOrPut(imageOrd, {})
+#
+#
+#
+#proc imageIds*(info: ExprInfo): set[ImageIdType] {.inline.} =
+#    ## What are the identifiers of the images used in an expression. 
+#    ## The expression is previously parsed by `parse`.
+#    ## 
+#    ## E.g. for the expression `A1 + B1` īmageIds` returns `['A', 'B']`
+#    return info.imageIdents
+#
+#
+#
+#proc imageOrdinals*(info: ExprInfo): set[uint8] {.inline.} =
+#    ## What are the ordinals of the images used in an expression. 
+#    ## The expression is previously parsed by `parse`.
+#    ## 
+#    ## E.g. for the expression `A1 + B1` `imageOrdinals` returns `[0, 1]`
+#    return info.imageOrds
+#
+#
+#
+#proc bandOrdinalsFor*(info: ExprInfo, imageOrdinal: uint8): set[BandOrdinalType] {.inline.} =
+#    ## What are the ordinals of the bands of an image used in an expression.
+#    ## The expression is previously parsed by `parse`.
+#    ## 
+#    ## E.g. for the expression A1 + A2 / B3 + B4` `bandOrdinalsFor(1)` 
+#    ## returns `[3, 4]`
+#    return info.bandOrdsForImage[imageOrdinal]
+#    
+#
+#
+#proc variables*(info: ExprInfo): seq[VarInfo] {.inline.} =
+#    ## The identifiers of the variables in an expression.
+#    ## The expression is previously parsed by `parse`.
+#    return info.vars
+#
+#
+#proc isScalar*(info: ExprInfo): bool {.inline.} =
+#    ## The expression in `info` is scalar if all variables specify a band
+#    ## e.g. "A1 + A2 / B1 + B2" is scalar while "A / 2" is not.
+#    return not info.vector
+#
+#proc isVector*(info: ExprInfo): bool {.inline.} =
+#    ## The expression in `info` is vector if at least one variable specifies
+#    ## all bands
+#    ## e.g. "A / 3" is a vector expression
+#    return info.vector
 
 func toImageId*(value: uint8) : ImageIdType {.inline.} =
   ## Converts an image ordinal from 0 - 25 to an id, or ValueError if out of 
@@ -166,6 +159,16 @@ func parseImageAndBandId*(value: string) : VariableInfo =
   let bandOrd = parseVarForBandOrdinal(value)
   return (imgId, imgOrd, bandOrd)
 
+func parseImageId*(value: string) : ImageIdType =
+  ## Parse a variable as a string to it's image id
+  ## 
+  ## e.g.
+  ## 
+  ## "D3" -> "D"
+  ## "B" -> "B"
+  let imgOrd = parseVarForImageOrdinal(value)
+  result = toImageId(imgOrd)
+  
 
 func findVarIdents*(s: string) : HashSet[string] =
     ## Find variable identifiers of the form \b[A-Z][0-9]?\b without using regex.
@@ -224,84 +227,84 @@ proc isScalar*(`expr`: string) : bool {. inline .} =
 
 
 
-proc isVarIdentAVector(ident: string) : bool {. inline .} =
-    ## Is a variable identifier a vector referencing multiple bands
-    ## e.g. 'A'  => true
-    ##      'A1' => false
-    let bandOrd = parseVarForBandOrdinal(ident)
-    return bandOrd == 0
+#proc isVarIdentAVector(ident: string) : bool {. inline .} =
+#    ## Is a variable identifier a vector referencing multiple bands
+#    ## e.g. 'A'  => true
+#    ##      'A1' => false
+#    let bandOrd = parseVarForBandOrdinal(ident)
+#    return bandOrd == 0
 
 
 
-proc expandVarIdents(idents: HashSet[string], bandCounts: seq[int]) : HashSet[string] =
-    ## Expand variable identifiers if needed (e.g. ['A', 'B1'] -> ['A1', 'A2', 'B1'])
-    var newIdents = initHashSet[string]()
-    for ident in idents:
-        if ident.isVarIdentAVector():
-            # expand
-            let imageOrd = parseVarForImageOrdinal(ident)
-            let imageId = ident[0]
-            for bandOrd in 1'u16..uint16 bandCounts[imageOrd]:
-                newIdents.incl(imageId & $imageOrd)
-        else:
-            newIdents.incl(ident)
-    return newIdents
+#proc expandVarIdents(idents: HashSet[string], bandCounts: seq[int]) : HashSet[string] =
+#    ## Expand variable identifiers if needed (e.g. ['A', 'B1'] -> ['A1', 'A2', 'B1'])
+#    var newIdents = initHashSet[string]()
+#    for ident in idents:
+#        if ident.isVarIdentAVector():
+#            # expand
+#            let imageOrd = parseVarForImageOrdinal(ident)
+#            let imageId = ident[0]
+#            for bandOrd in 1'u16..uint16 bandCounts[imageOrd]:
+#                newIdents.incl(imageId & $imageOrd)
+#        else:
+#            newIdents.incl(ident)
+#    return newIdents
 
 
     
-func bindToBands*(`expr`: string, bandCounts: seq[int]) : ExprInfo {.raises: [ValueError].}  =
-    ## Bind the variables in `expr` to a band in an image.
-    ## 
-    ## Variables in `expr` are of the form:
-    ## `[A-Z](1-9)` where:
-    ## -  a letter A-Z is an image
-    ## -  a digit 1-65535 is a band in the image, or if missing, all bands
-    ## 
-    ## `bandCounts[0..25]` has the number of bands for images A..Z.  Each 
-    ## variable in `expr` must reference one or more bands in an image.
-    ## 
-    ## 
-    ## If `expr` contains an image or band number that is not available in
-    ## `maps`, then a `ValueError` is raised.
-    
-    var info: ExprInfo
-    info.exprRepr = `expr`
-    
-    # get all variable identifiers with their band ordinals. i.e. all identifiers
-    # should be scalar.
-    var idents = `expr`.findVarIdents()          # may be scalar and vector
-    idents = expandVarIdents(idents, bandCounts) # now they are all scalar
-
-    for ident in idents:
-
-        # image number (e.g. A -> 0)
-        let imageOrd = parseVarForImageOrdinal(ident)
-        if imageOrd >= uint8 bandCounts.len: #number of images
-            raise newException(
-                ValueError,
-                "No image is provided for " & ident[0] & " in " & " variable"
-                )
-        let imageId = ident[0]
-        info.addImage(imageOrd, imageId)
-         
-        # add band(s)
-        let bandOrd = parseVarForBandOrdinal(ident)
-        if bandOrd > uint16 bandCounts[imageOrd]:
-            raise newException(
-                ValueError,
-                "Invalid band " & $bandOrd & " for Image " & imageId & 
-                ". Image has " & $bandCounts[imageOrd] & " bands." #bands in a particular image
-                )
-         
-        info.bandOrdsForImage[imageOrd].incl(bandOrd)
-        # add the IdentInfo object
-        var variable = VarInfo(bandOrd: bandOrd)
-        variable.ident = imageId & $bandOrd
-        variable.imageOrd = imageOrd
-        variable.imageId = imageId
-        info.vars.add(variable)
-    
-    return info
+#func bindToBands*(`expr`: string, bandCounts: seq[int]) : ExprInfo {.raises: [ValueError].}  =
+#    ## Bind the variables in `expr` to a band in an image.
+#    ## 
+#    ## Variables in `expr` are of the form:
+#    ## `[A-Z](1-9)` where:
+#    ## -  a letter A-Z is an image
+#    ## -  a digit 1-65535 is a band in the image, or if missing, all bands
+#    ## 
+#    ## `bandCounts[0..25]` has the number of bands for images A..Z.  Each 
+#    ## variable in `expr` must reference one or more bands in an image.
+#    ## 
+#    ## 
+#    ## If `expr` contains an image or band number that is not available in
+#    ## `maps`, then a `ValueError` is raised.
+#    
+#    var info: ExprInfo
+#    info.exprRepr = `expr`
+#    
+#    # get all variable identifiers with their band ordinals. i.e. all identifiers
+#    # should be scalar.
+#    var idents = `expr`.findVarIdents()          # may be scalar and vector
+#    idents = expandVarIdents(idents, bandCounts) # now they are all scalar
+#
+#    for ident in idents:
+#
+#        # image number (e.g. A -> 0)
+#        let imageOrd = parseVarForImageOrdinal(ident)
+#        if imageOrd >= uint8 bandCounts.len: #number of images
+#            raise newException(
+#                ValueError,
+#                "No image is provided for " & ident[0] & " in " & " variable"
+#                )
+#        let imageId = ident[0]
+#        info.addImage(imageOrd, imageId)
+#         
+#        # add band(s)
+#        let bandOrd = parseVarForBandOrdinal(ident)
+#        if bandOrd > uint16 bandCounts[imageOrd]:
+#            raise newException(
+#                ValueError,
+#                "Invalid band " & $bandOrd & " for Image " & imageId & 
+#                ". Image has " & $bandCounts[imageOrd] & " bands." #bands in a particular image
+#                )
+#         
+#        info.bandOrdsForImage[imageOrd].incl(bandOrd)
+#        # add the IdentInfo object
+#        var variable = VarInfo(bandOrd: bandOrd)
+#        variable.ident = imageId & $bandOrd
+#        variable.imageOrd = imageOrd
+#        variable.imageId = imageId
+#        info.vars.add(variable)
+#    
+#    return info
 
 #proc bindToBands*(`expr`: string, maps: varargs[Map]) :
 # ExprInfo {.raises: [ValueError].}  =

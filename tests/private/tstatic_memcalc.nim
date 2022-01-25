@@ -1,5 +1,5 @@
 import unittest, tables, math
-import geomap.static_memcalc, common
+import geomap/private/static_memcalc, ../testutils
 
 
 
@@ -111,3 +111,9 @@ test "evaluate with destination offset":
   let expected = @[0, 0, 1, 2, 3, 0]
   check dst == expected
 
+test "evaluate with same variable: A1 + A1":
+  let vectors = {"A1": @[91, 109, 93, 101]}.toTable()
+  var dst = newSeq[byte](4)
+  evaluateScalar("A1 + A1", vectors, dst, 0)
+  let expected = @[byte 182, 218, 186, 202]
+  check dst == expected

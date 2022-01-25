@@ -1,15 +1,7 @@
 ## Arithmetic calculations on Maps. 
 
-import geomap, raster, geomap/static_memcalc, calcexpr, gdal/gdal
+import ../geomap, ../raster, static_memcalc, expressions, anyitems
 import tables, sets, macros, strformat
-
-proc getAnyPair[K, V](table: TableRef[K, V]) : (K,V) = 
-  for k, v in table.pairs():
-    return (k, v)
-
-proc getAnyValue[K, V](table: TableRef[K, V]) : V = 
-  for v in table.values():
-    return v
 
 proc commonBlockInfo(rasterMaps: TableRef[ImageIdType, Map], blockInfo: var BlockInfo) : bool = 
   ## Do raster maps have the same block size?  
@@ -77,13 +69,31 @@ proc readBlock[T](x, y: int,
     
 
 
-template calcBlock[D](expression: static[string],
+#macro castRasterData(ident: untyped, raster: Raster, bandDataType: static[RasterDataType]) =
+macro castRasterData(raster: Raster, bandDataType: static[RasterDataType]) =
+  ## var `ident` = cast[seq[`bandDataType`]](`raster`.data) (no copy)
+  
+  let dataTypeStr = bandDataType.toNimTypeStr()
+  result = newStmtList(
+    #newVarStmt(ident,
+      newNimNode(nnkCast).add(
+        newNimNode(nnkBracketExpr).add(
+          ident "seq",
+          ident dataTypeStr
+        ),
+        newDotExpr(ident raster.strVal, ident "data")
+      )
+    #)
+  )
+
+
+template calcBlock(expression: static[string],
                    x,y: int, 
                    blockInfo: BlockInfo, 
                    maps: TableRef[ImageIdType, Map],
                    varIdents: HashSet[string],
                    T: typedesc,
-                   dst: var openarray[D]) = 
+                   dst: var Raster) = #var openarray[D]) = 
   ## Calculate on block `x`,`y` of bands in `maps`, with each band having 
   ## type T and store the result in `dst`  
   
@@ -93,36 +103,22 @@ template calcBlock[D](expression: static[string],
   for varIdent in varIdents.items():
    
     # load vectors with the band data
-    let varInfo = varIdent.parseImageAndBandId()
+    let varInfo = parseImageAndBandId(varIdent)
     let map = maps[varInfo.imageId]
     vectors[varIdent] = readBlock[T](x, y, blockInfo, map, varInfo.bandOrd)
-
+  
   # compute the calculation for the block
-  evaluateScalar(expression, vectors, dst, offset)
-
+  evaluateScalar(expression, vectors, cast[seq[uint8]](result.data), offset)
   # increment offset for later (blockInfo may be larger than what is read)
   #offset = offset + vectors[varIdent].len
 
 
-macro castRasterData(ident: untyped, raster: Raster, bandDataType: static[RasterDataType]) =
-  ## var `ident` = cast[seq[`bandDataType`]](`raster`.data)
-  
-  let dataTypeStr = bandDataType.toNimTypeStr()
-  result = newStmtList(
-    newVarStmt(ident,
-      newNimNode(nnkCast).add(
-        newNimNode(nnkBracketExpr).add(
-          ident "seq",
-          ident dataTypeStr
-        ),
-        newDotExpr(ident raster.strVal, ident "data")
-      )
-    )
-  )
  
 
 
-proc calc*(expression: static[string], maps: TableRef[char, Map], dst: Raster, dt: static[RasterDataType])  = #progress: Progress = NoProgress
+proc staticCalc*(expression: static[string], 
+                 maps: TableRef[char, Map], 
+                 dt: static[RasterDataType]) : Raster = 
   ## Calculate the result of `expression` referencing one or more Maps. 
   ## The result is stored in `dst` which has type `dt`.  `dt` is required
   ## to be known at compile-time and should match the bandDataType in `dst` or
@@ -159,7 +155,9 @@ proc calc*(expression: static[string], maps: TableRef[char, Map], dst: Raster, d
 
   # var dstData = cast[seq[`dt`]](dst.data) so dst.data can be used by
   # evaluateScalar
-  castRasterData(dstData, dst, dt)
+  result = initRaster(randomMeta.width, randomMeta.height, 1, BIP, dt)  
+  #castRasterData(dstData, result, dt)
+  #castRasterData(result.data, dt)
 
   # calc block by block, one block at a time.  We pass this to a template
   # so to avoid repeating ourselves as their are different types.
@@ -167,90 +165,20 @@ proc calc*(expression: static[string], maps: TableRef[char, Map], dst: Raster, d
       for y in 0 ..< blockInfo.yBlockCount:
         case randomMeta.bandDataType:
         of i8: 
-          calcBlock(expression, x, y, blockInfo, maps, varIdents, int8, dstData)
+          calcBlock(expression, x, y, blockInfo, maps, varIdents, int8, result)
         of u8: 
-          calcBlock(expression, x, y, blockInfo, maps, varIdents, uint8, dstData)
+          calcBlock(expression, x, y, blockInfo, maps, varIdents, uint8, result)
         of i16: 
-          calcBlock(expression, x, y, blockInfo, maps, varIdents, int16, dstData)
+          calcBlock(expression, x, y, blockInfo, maps, varIdents, int16, result)
         of u16: 
-          calcBlock(expression, x, y, blockInfo, maps, varIdents, uint16, dstData)
+          calcBlock(expression, x, y, blockInfo, maps, varIdents, uint16, result)
         of i32: 
-          calcBlock(expression, x, y, blockInfo, maps, varIdents, int32, dstData)
+          calcBlock(expression, x, y, blockInfo, maps, varIdents, int32, result)
         of u32: 
-          calcBlock(expression, x, y, blockInfo, maps, varIdents, uint32, dstData)
+          calcBlock(expression, x, y, blockInfo, maps, varIdents, uint32, result)
         of f32: 
-          calcBlock(expression, x, y, blockInfo, maps, varIdents, float32, dstData)
+          calcBlock(expression, x, y, blockInfo, maps, varIdents, float32, result)
         of f64: 
-          calcBlock(expression, x, y, blockInfo, maps, varIdents, float64, dstData)
+          calcBlock(expression, x, y, blockInfo, maps, varIdents, float64, result)
         of none: 
           raise newException(ValueError, "data type `none` unsupported")
-
-
-
-proc calc*(expression: static[string], maps: TableRef[char, Map], dt: static[RasterDataType]): Raster  = #progress: Progress = NoProgress
-  ## Calculate the result of `expression` referencing one or more Maps. 
-  ## The result is stored in `dst` which has type `dt`.  `dt` is required
-  ## to be known at compile-time and should match the bandDataType in `dst` or
-  ## a RangeError may be raised if data is out of range.
-  ## 
-  ## This function will load the rasters in `maps` block by block reducing
-  ## memory needed at any one time.
-  ## 
-  ## The Map instances in `rasterMaps` must contain raster, not vector, data or
-  ## a ValueError is raised. All rasters must be the same size or IndexDefect
-  ## is raised.  They must have the same datatype.
-  ## 
-  ## This function is fastest when the rasters are tiled with the same block size,
-  ## otherwise the rasters are read line by line.
-  ## 
-  ## Each variable in `expression` must have a Map in `maps` or a KeyError
-  ## is raised.
-
-  let meta = maps.getAnyValue().readRasterMetadata()
-  var dst = initRaster(meta.width, meta.height, 1, BIP, dt)  #(1, 1, 1, BIP, u8)
-  calc(expression, maps, dst, dt)
-  return dst  
-
-proc maptest2(map: Map) =
-  echo "------>" & map.path # but this doesn't so it's a table issue
-
-proc maptest3(maps: seq[Map]) =
-  echo "------>" & maps[0].path 
-
-proc maptest(maps: TableRef[ImageIdType, Map]) =
-  # as soon as we reference a Map, arc will =destroy when we go out of scope
-  echo "------>" & maps['B'].path 
-
-proc main() =
-  # this destroys maps 
-  var maps = newTable[ImageIdType, Map](1)
-  maps['A'] = geomap.open("/Users/nozza/vinegap2/testimages/drone/bright.jpeg")
-  maps['B'] = geomap.open("/Users/nozza/vinegap2/testimages/drone/bright_copy.jpeg")
-  #maptest(maps)
-  expandMacros:
-    let dst = calc("A1 + B1", maps, u8)
-    echo dst.data.len
-  
-
-  #let map = geomap.open("/Users/nozza/vinegap2/testimages/drone/bright.jpeg")
-  #echo map.unsafeAddr.repr
-  #echo ""
-  #maptest(map)
-  
-  # this works
-  #let A = geomap.open("/Users/nozza/vinegap2/testimages/drone/bright.jpeg")
-  #let B = geomap.open("/Users/nozza/vinegap2/testimages/drone/bright_copy.jpeg")
-  #let s = @[A, B]
-  #maptest3(s)
-
-  echo "done"
-
-  #castRasterData(output, dst, f32)
-  #echo output
-  #calc("A + B", maps, dst, i8)
-  
-  #echo dst
-  #castRasterData(dstData, dst, i8)
-  #dumpTree:
-  #  var dstData = cast[seq[int8]](raster.data)
-main()

@@ -42,7 +42,7 @@
 ## 
   
 import std/tables, std/macros, sets, strformat, typetraits
-import calcexpr
+import expressions
 
 type 
   UnsafeSeq*[T] {.requiresInit.} = object

@@ -1,0 +1,2 @@
+type
+  CSLConstList* = ptr cstring

@@ -1,17 +1,12 @@
 ## To statically link
 ## ------------------
 ## --dynlibOverride:libgdal --passL:libgdal.a  or {.link libgdal.a.}
+import cpl_port
+import lib
 
-when defined(windows):
-  const libgdal = "libgdal.dll"
-elif defined(macosx):
-  const libgdal = "libgdal.dylib"
-else:
-  const libgdal = "libgdal.so"
 
 
 type
-  Dataset* = pointer
   Band* = pointer
   Layer* = pointer
   Feature* = pointer
@@ -111,10 +106,10 @@ type
     MultiPolygon25D        ## 2.5D extension as per 99-402
     GeometryCollection25D  ## 2.5D extension as per 99-402
 
-proc `$`*(ds:Dataset) : string =
+proc `$`*(ds:pointer) : string =
   result = ds.unsafeAddr.repr
 
-type GDAL_GCP* {.importc: "struct GDAL_GCP", header: "gdal.h".} = object  
+type GDAL_GCP* {.importc, header: "gdal.h".} = object #{.importc: "struct GDAL_GCP", header: "gdal.h".} = object  
   pszId*: cstring
   pszInfo*: cstring
   dfGCPPixel*: cdouble
@@ -220,6 +215,11 @@ const
   OF_MULTIDIM_RASTER* = 0x10 ##
   OF_SHARED*    = 0x20  ## Open in shared mode
   OF_VERBOSE_ERROR*   = 0x40  ## Emit error message in case of a failed open
+  GDAL_DCAP_CREATE* = "DCAP_CREATE".cstring
+  GDAL_DCAP_CREATECOPY* = "DCAP_CREATE_COPY".cstring
+  GDAL_DCAP_RASTER* = "DCAP_RASTER".cstring
+  GDAL_DMD_EXTENSIONS* = "DMD_EXTENSIONS".cstring
+  GDAL_DMD_CONNECTION_PREFIX* = "GDAL_DMD_CONNECTION_PREFIX".cstring
   WKT_WGS84* = "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563,AUTHORITY[\"EPSG\",\"7030\"]],AUTHORITY[\"EPSG\",\"6326\"]],PRIMEM[\"Greenwich\",0,AUTHORITY[\"EPSG\",\"8901\"]],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AUTHORITY[\"EPSG\",\"4326\"]]"  ## WGS 84 geodetic (long/lat) WKT / EPSG:4326 with long,lat ordering
   PT_ALBERS_CONIC_EQUAL_AREA* = "Albers_Conic_Equal_Area"  ## Albers_Conic_Equal_Area projection
   PT_AZIMUTHAL_EQUIDISTANT* = "Azimuthal_Equidistant"  ## Azimuthal_Equidistant projection
@@ -393,20 +393,29 @@ proc registerAll*() {.cdecl, dynlib: libgdal, importc: "GDALAllRegister".}
   ## raster list http://gdal.org/formats_list.html, vector list http://gdal.org/ogr_formats.html
   ## This function should generally be called once at the beginning of the application.
 
-proc getDriverCount*(): int {.cdecl, dynlib: libgdal, importc: "GDALGetDriverCount".}
+proc GDALGetDriverCount*(): int {.cdecl, dynlib: libgdal, importc .}
     ## Return the number of registered drivers
 
-proc GDALGetGeoTransform*(hDS: Dataset, transform: ptr float64): int {.cdecl, dynlib: libgdal, importc: "GDALGetGeoTransform".}
+proc GDALGetDriver*(iDriver: cint) : pointer {.cdecl, dynlib: libgdal, importc .}
+
+proc GDALGetDriverShortName*(hDriver: pointer) : cstring {.cdecl, dynlib: libgdal, importc .}
+
+proc GDALGetGeoTransform*(hDS: pointer, transform: ptr float64): int {.cdecl, dynlib: libgdal, importc: "GDALGetGeoTransform".}
     ## Get the affine transform coefficients
 
-proc getGCPCount*(hDS: Dataset): cint {.cdecl, dynlib: libgdal, importc: "GDALGetGCPCount".}   
+proc GDALSetGeoTransform*(hDS: pointer, transform: ptr float64) : cint {.cdecl, dynlib: libgdal, importc .}
+
+proc getGCPCount*(hDS: pointer): cint {.cdecl, dynlib: libgdal, importc: "GDALGetGCPCount".}   
     ## number of GCPs
 
-proc getGCPs*(hDS: Dataset): ptr GDAL_GCP {.cdecl, dynlib: libgdal, importc: "GDALGetGCPs".}
+proc getGCPs*(hDS: pointer): ptr GDAL_GCP {.cdecl, dynlib: libgdal, importc: "GDALGetGCPs".}
 
-proc GDALGetMetadata*(hDS: Dataset, pszDomain: cstring): ptr cstring {.cdecl, dynlib: libgdal, importc: "GDALGetMetadata".}
+proc GDALGetDriverByName*(pszName: cstring) : pointer  {.cdecl, dynlib: libgdal, importc: "GDALGetDriverByName".}
 
-proc GDALGetRasterBand*(hDS: Dataset, nBandId: cint) : Band {.cdecl, dynlib: libgdal, importc: "GDALGetRasterBand".}
+proc GDALGetMetadata*(hDS: pointer, pszDomain: cstring): ptr cstring {.cdecl, dynlib: libgdal, importc: "GDALGetMetadata".}
+proc GDALGetMetadataItem*(hD: pointer, pszDomain: cstring, pszItem: cstring) : cstring {.cdecl, dynlib: libgdal, importc .}
+
+proc GDALGetRasterBand*(hDS: pointer, nBandId: cint) : Band {.cdecl, dynlib: libgdal, importc: "GDALGetRasterBand".}
 
 proc GDALGetDataTypeSizeBits*(eDataType: GDALDataType) : cint {.cdecl, dynlib: libgdal, importc: "GDALGetDataTypeSizeBits".}
 
@@ -416,7 +425,7 @@ proc GDALFindDataType* (nBits: cint, bSigned: cint, bFloating: cint, bComplex: c
 
 proc GDALDataTypeUnion*(eType1: GDALDataType, eType2: GDALDataType) : GDALDataType {.cdecl, dynlib: libgdal, importc: "GDALDataTypeUnion".}
 
-proc GDALDatasetRasterIOEx*(hDS: Dataset, eRWFlag: GDALRWFlag, nXOff: cint, nYOff: cint,
+proc GDALDatasetRasterIOEx*(hDS: pointer, eRWFlag: GDALRWFlag, nXOff: cint, nYOff: cint,
                             nXSize: cint, nYSize: cint, pData: pointer, 
                             nBufXSize: cint, nBufYSize: cint, 
                             eBufType: GDALDataType, nBandCount: cint, 
@@ -431,27 +440,33 @@ proc GDALGetBlockSize*(hBand: Band, xsize: ptr cint, ysize: ptr cint) {.cdecl, d
 
 proc GDALReadBlock*(hBand: Band, nXBlockOff: cint, bYBlockOff: cint, pImage: pointer) {.cdecl, dynlib: libgdal, importc: "GDALReadBlock".}
 
-proc open*(pszFilename: cstring, nOpenFlags: int32, papszAllowedDrivers: cstring, papszOpenOptions: cstring, papszSiblingFiles: cstring): Dataset {.cdecl, dynlib: libgdal, importc: "GDALOpenEx".}
+proc GDALCreate*(hDriver: pointer, pszFilename: cstring, nXSize: cint, nYSize: cint, nBands: cint, eType: GDALDataType, papszOptions: CSLConstList) : pointer {.cdecl, dynlib: libgdal, importc: "GDALCreate".}
+
+proc GDALCreateCopy*(hDriver: pointer, pszFilename: cstring, hSrsDs: pointer, bStrict: cint, papszOptions: CSLConstList, pfnProgress: GDALProgressFunc, pProgressData: pointer): pointer {.cdecl, dynlib: libgdal, importc .}
+
+proc GDALOpen*(pszFilename: cstring, nOpenFlags: cint, papszAllowedDrivers: cstring, papszOpenOptions: cstring, papszSiblingFiles: cstring): pointer {.cdecl, dynlib: libgdal, importc: "GDALOpenEx".}
   ## Open a raster or vector file as a Dataset.
 
-proc getLayerByName*(hDS: Dataset, pszName: cstring): Layer {.cdecl, dynlib: libgdal, importc: "GDALDatasetGetLayerByName".}
+proc GDALSetProjection*(hDstSrs: pointer, pszProjection: cstring): cint {.cdecl, dynlib: libgdal, importc .}
+
+proc getLayerByName*(hDS: pointer, pszName: cstring): Layer {.cdecl, dynlib: libgdal, importc: "GDALDatasetGetLayerByName".}
   ## Fetch a layer by name.
 
-proc getLayerCount*(hDS: Dataset): int32 {.cdecl, dynlib: libgdal, importc: "GDALDatasetGetLayerCount".}
+proc getLayerCount*(hDS: pointer): int32 {.cdecl, dynlib: libgdal, importc: "GDALDatasetGetLayerCount".}
   ## Get the number of layers in this dataset.
 
-proc getLayer*(hDS: Dataset, iLayer: int32): Layer {.cdecl, dynlib: libgdal, importc: "GDALDatasetGetLayer".}
+proc getLayer*(hDS: pointer, iLayer: int32): Layer {.cdecl, dynlib: libgdal, importc: "GDALDatasetGetLayer".}
   ## Fetch a layer by index.
 
 proc GDALGetRasterDataType*(hBand: Band) : GDALDataType {.cdecl, dynlib: libgdal, importc: "GDALGetRasterDataType".}
 
 proc GDALGetRasterColorInterpretation*(hBand: Band) : GDALColorInterp {.cdecl, dynlib: libgdal, importc: "GDALGetRasterColorInterpretation".}
 
-proc getRasterXSize*(hDS: Dataset): cint {.cdecl, dynlib: libgdal, importc: "GDALGetRasterXSize".}
+proc GDALGetRasterXSize*(hDS: pointer): cint {.cdecl, dynlib: libgdal, importc: "GDALGetRasterXSize".}
 
-proc getRasterYSize*(hDS: Dataset): cint {.cdecl, dynlib: libgdal, importc: "GDALGetRasterYSize".}
+proc GDALGetRasterYSize*(hDS: pointer): cint {.cdecl, dynlib: libgdal, importc: "GDALGetRasterYSize".}
 
-proc GDALGetRasterCount*(hDS: Dataset): cint {.cdecl, dynlib: libgdal, importc: "GDALGetRasterCount".}
+proc GDALGetRasterCount*(hDS: pointer): cint {.cdecl, dynlib: libgdal, importc: "GDALGetRasterCount".}
 
 proc resetReading*(hLayer: Layer) {.cdecl, dynlib: libgdal, importc: "OGR_L_ResetReading".}
   ## Reset feature reading to start on the first feature.
@@ -513,17 +528,23 @@ proc getGeomFieldRef*(hFeat: Feature, iField: int32): Geometry {.cdecl, dynlib: 
 proc destroy*(hFeat: Feature) {.cdecl, dynlib: libgdal, importc: "OGR_F_Destroy".}
   ## Destroy feature
 
-proc close*(hDS: Dataset) {.cdecl, dynlib: libgdal, importc: "GDALClose".}
+proc close*(hDS: pointer) {.cdecl, dynlib: libgdal, importc: "GDALClose".}
   ## Close GDAL dataset
 
 
 proc flatten*(eType: GeometryType): GeometryType {.cdecl, dynlib: libgdal, importc: "OGR_GT_Flatten".}
   ## Returns the 2D geometry type corresponding to the passed geometry type.
 
-proc getProjectionRef*(hDS: Dataset): cstring {.cdecl, dynlib: libgdal, importc: "GDALGetProjectionRef".}
+proc getProjectionRef*(hDS: pointer): cstring {.cdecl, dynlib: libgdal, importc: "GDALGetProjectionRef".}
   ## Fetch the projection definition string for this dataset.
 
-proc getSpatialReference*(hGeom: Geometry): SpatialReference {.cdecl, dynlib: libgdal, importc: "OGR_G_GetSpatialReference".}
+proc GDALGetSpatialRef*(hDS: pointer) : SpatialReference {.cdecl, dynlib: libgdal, importc .}
+
+proc GDALSetSpatialRef*(hDS: pointer, hSrs: pointer) : cint {.cdecl, dynlib: libgdal, importc .}
+
+proc GDALGetGCPSpatialRef*(hDS: pointer) : SpatialReference {.cdecl, dynlib: libgdal, importc .}
+
+proc GDALGetSpatialReference*(hGeom: Geometry): SpatialReference {.cdecl, dynlib: libgdal, importc: "OGR_G_GetSpatialReference".}
   ## Returns spatial reference system for geometry.
 
 proc intersection*(hThis, hOther: Geometry): Geometry {.cdecl, dynlib: libgdal, importc: "OGR_G_Intersection".}

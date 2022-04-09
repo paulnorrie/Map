@@ -12,6 +12,8 @@ license       = "MIT"
 # Dependencies
 
 requires "nim >= 1.4.8"
+requires "optionsutils"
+requires "arraymancer"
 #requires "mathexpr"
 
 #before install:

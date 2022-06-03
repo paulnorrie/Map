@@ -1,7 +1,8 @@
 ## Band calculations, such as calculating a spectral index.
 ## 
 ## Calculations work on expressions, using variables `x`,`y`,`z` for bands 1,
-## 2, and 3 respectively.
+## 2, and 3 respectively.  Only the first three bands of a raster can be
+## used in an expression.
 ## 
 ## Use `calc1` when using 1 variable, `calc2` when 2, and `calc3` when 3 
 ## variables.
@@ -11,16 +12,14 @@
 ## ```
 ## # For each pixel in src, multiply the first band by two and subtract the
 ## second band, storing the result as 1 band in dst.
-## var dst: Tensor[byte]
-## src.calc2(dst, (2 * x) - y)   
+## let dst = src.calc2[:byte, byte]((2 * x) - y)   
 ## 
 ## # You can change data types.  This creates an  NDVI index if band 1
-## # is red and band2 is NIR.  Assume src is type Tensor[byte]
-## var dst: Tensor[float32]
-## src.calc2(dst, y - x / y + x)
+## # is red and band2 is NIR.  Assume src is type Tensor[byte]. 
+## let dst = src.calc2[:byte, float32](y - x / y + x) # dst is Tensor[float32]
 ## 
 ## # You can calculate an expression in-place
-## src.calc1(x div 2)
+## src.calc1(x div 2)  # src is modified 
 ## 
 ## # You can use anything that's a legal nim expression
 ## # except library functions other than system
@@ -51,7 +50,8 @@ import std/[macros]
 #     so templates must have different names
 
 
-template calc3*[S,D](src: Tensor[S], dst: var Tensor[D], `expr`: untyped) =
+
+template calc3*[S,D](src: Tensor[S], `expr`: untyped) : Tensor[D] =
   ## Calculate `expr` on each pixel in `src` and return the result in `dst`.
   ##
   ## `expr` may contain the following variables that are injected into scope:
@@ -65,18 +65,22 @@ template calc3*[S,D](src: Tensor[S], dst: var Tensor[D], `expr`: untyped) =
   ## 
   ## The destination type may be different than the source type. This is useful
   ## if the expression will expand the data size needed.
-  if src.bandCount() < 3:
-    raise newException(ValueError, "calc3 requires at least 3 bands")
-  else:
-    let band1 = src[_, _, 0].astype(type(D))
-    let band2 = src[_, _, 1].astype(type(D))
-    let band3 = src[_, _, 2].astype(type(D))
-    dst = map3_inline(band1, band2, band3):
-      `expr`
+  block:
+    var dst = newTensorUninit[D](src.shape[0], src.shape[1], 1)
+    if src.bandCount() < 3:
+      raise newException(ValueError, "calc3 requires at least 3 bands")
+    else:
+      let band1 = src[_, _, 0].astype(type(D))
+      let band2 = src[_, _, 1].astype(type(D))
+      let band3 = src[_, _, 2].astype(type(D))
+      dst = map3_inline(band1, band2, band3):
+        `expr`
+    dst
       
 
 
-template calc2*[S,D](src: Tensor[S], dst: var Tensor[D], `expr`: untyped) =
+
+template calc2*[S,D](src: Tensor[S], `expr`: untyped) : Tensor[D] =
   ## Calculate `expr` on each pixel in `src` and return the result in `dst`.
   ##
   ## `expr` may contain the following variables that are injected into scope:
@@ -89,16 +93,19 @@ template calc2*[S,D](src: Tensor[S], dst: var Tensor[D], `expr`: untyped) =
   ## 
   ## The destination type may be different than the source type. This is useful
   ## if the expression will expand the data size needed.
-  if src.bandCount() < 2:
-    raise newException(ValueError, "calc2 requires at least 2 bands")
-  else:
-    let band1 = src[_, _, 0].astype(type(D))
-    let band2 = src[_, _, 1].astype(type(D))
-    dst = map2_inline(band1, band2):
-      `expr`
+  block:
+    var dst = newTensorUninit[D](src.shape[0], src.shape[1], 1)
+    if src.bandCount() < 2:
+      raise newException(ValueError, "calc2 requires at least 2 bands")
+    else:
+      let band1 = src[_, _, 0].astype(type(D))
+      let band2 = src[_, _, 1].astype(type(D))
+      dst = map2_inline(band1, band2):
+        `expr`
+    dst
       
 
-template calc1*[S,D](src: Tensor[S], dst: var Tensor[D], `expr`: untyped) =
+template calc1*[S,D](src: Tensor[S], `expr`: untyped) : Tensor[D] =
   ## Calculate `expr` on each pixel in `src`. The result is stored in
   ## the first band.
   ##
@@ -111,12 +118,15 @@ template calc1*[S,D](src: Tensor[S], dst: var Tensor[D], `expr`: untyped) =
   ## 
   ## The destination type may be different than the source type. This is useful
   ## if the expression will expand the data size needed.
-  if src.bandCount() < 1:
-    raise newException(ValueError, "calc1 requires at least 1 band")
-  else:
-    let band1 = src[_, _, 0].astype(type(D))
-    dst = map_inline(band1):
-      `expr`
+  block:
+    var dst = newTensorUninit[D](src.shape[0], src.shape[1], 1)
+    if src.bandCount() < 1:
+      raise newException(ValueError, "calc1 requires at least 1 band")
+    else:
+      let band1 = src[_, _, 0].astype(type(D))
+      dst = map_inline(band1):
+        `expr`
+    dst
 
 
 

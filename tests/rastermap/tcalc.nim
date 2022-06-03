@@ -14,22 +14,19 @@ test "calc: invalid expression raises compile error: A + 1":
     notCompiles:
       let map = rastermap.open("testdata/geoRGB.tiff")
       let raster = map.read[:byte]()
-      var dst: Tensor[byte]
-      raster.calc(dst, A + 1)
+      let dst = raster.calc[:byte, byte](A + 1)
 
 
 
 test "calc: expanding types":
-  var dst: Tensor[int16]
-  raster2x2.calc3(dst, 2*y - (x+z))
+  let dst = raster2x2.calc3[:byte, int16](2*y - (x+z))
   let expected = @[int16 -5, -18, -18, -14].toTensor().reshape(2, 2, 1)
   check dst == expected
   
 
 
 test "calc: conditional function":
-  var dst: Tensor[int]
-  raster2x2.calc1(dst):
+  let dst = raster2x2.calc1[:byte, int]:
     if x <= 100:
       0
     else:
